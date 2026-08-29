@@ -5,3 +5,8 @@ pub(crate) mod diagnostics;
 pub(crate) mod domain;
 #[allow(dead_code)] // Parsing is intentionally not connected to a process in Gate 4B-1.
 pub(crate) mod readiness;
+#[cfg(windows)]
+#[allow(dead_code)] // Gate 4B-2 proves containment without wiring product lifecycle commands.
+pub(crate) mod windows;
+#[cfg(all(test, windows))]
+mod windows_tests;
