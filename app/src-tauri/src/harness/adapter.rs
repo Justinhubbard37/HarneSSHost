@@ -22,6 +22,7 @@ impl HarnessId {
 pub(crate) struct HarnessDescriptor {
     pub(crate) id: HarnessId,
     pub(crate) display_name: String,
+    pub(crate) description: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,8 +1,26 @@
-export type DetectionStatus = "detected" | "notFound" | "invalid" | "error";
+export type HarnessCardState =
+  | "notInstalled"
+  | "ready"
+  | "problemDetected"
+  | "unsupportedLocalInstallation";
 
-export type CompatibilityState =
-  | "testedVersionMatch"
-  | "unverifiedVersion";
+export interface HarnessCardSummary {
+  id: string;
+  displayName: string;
+  description: string;
+  state: HarnessCardState;
+  hasDetails: boolean;
+}
+
+export interface HarnessLibraryPayload {
+  harnesses: HarnessCardSummary[];
+}
+
+export type DetectionStatus = "detected" | "notInstalled" | "invalid" | "error";
+
+export type CompatibilityState = "testedVersionMatch" | "unverifiedVersion";
+
+export type RuntimePhase = "inactive" | "starting" | "ready" | "stopping" | "failed";
 
 export type CapabilityDomain =
   | "interaction"
@@ -47,26 +65,28 @@ export interface CapabilityManifest {
   entries: CapabilityEntry[];
 }
 
-export interface HarnessSnapshot {
+export interface HarnessDetectionDetails {
+  status: DetectionStatus;
+  code?: string;
+  message?: string;
+  detectedVersion?: string;
+  compatibility?: CompatibilityState;
+}
+
+export interface HarnessRuntimeDetails {
+  phase: RuntimePhase;
+}
+
+export interface HarnessDetailsPayload {
   id: string;
   displayName: string;
-  detectionStatus: DetectionStatus;
-  diagnosticCode?: string;
-  sanitizedMessage?: string;
-  detectedVersion?: string;
-  testedVersions: TestedVersion[];
-  compatibility?: CompatibilityState;
-  startBlocked: boolean;
+  description: string;
+  detection: HarnessDetectionDetails;
+  runtime: HarnessRuntimeDetails;
   capabilityManifest: CapabilityManifest;
 }
 
 export interface HostSurfaceState {
   kind: "noHarnessActive" | "loading" | "unavailable" | "error";
   message?: string;
-}
-
-export interface HostSnapshot {
-  productName: string;
-  interfaceState: HostSurfaceState;
-  harnesses: HarnessSnapshot[];
 }

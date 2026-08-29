@@ -1,11 +1,11 @@
 import "./App.css";
 import { HostShell } from "./components/HostShell";
-import { useHostSnapshot } from "./host/useHostSnapshot";
+import { useHarnessLibrary } from "./host/useHarnessLibrary";
 
 function App() {
-  const hostState = useHostSnapshot();
+  const libraryState = useHarnessLibrary();
 
-  return <HostShell hostState={hostState} />;
+  return <HostShell libraryState={libraryState} />;
 }
 
 export default App;

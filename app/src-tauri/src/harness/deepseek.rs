@@ -27,6 +27,9 @@ impl DeepSeekAdapter {
             descriptor: HarnessDescriptor {
                 id: HarnessId::new(DEEPSEEK_ADAPTER_ID),
                 display_name: "DeepSeek Harness".to_string(),
+                description:
+                    "A local agent harness with chat, tools, agents, governance, and durable sessions."
+                        .to_string(),
             },
         }
     }

@@ -2,6 +2,8 @@ mod commands;
 mod development_candidates;
 mod harness;
 mod interface;
+mod library;
+mod runtime;
 mod state;
 
 use state::AppState;
@@ -12,7 +14,10 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(app_state)
-        .invoke_handler(tauri::generate_handler![commands::get_host_snapshot])
+        .invoke_handler(tauri::generate_handler![
+            commands::get_harness_library,
+            commands::get_harness_details
+        ])
         .run(tauri::generate_context!())
         .expect("error while running HarneSSHost");
 }
