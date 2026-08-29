@@ -1,7 +1,3 @@
-# Tauri + React + Typescript
+# HarneSSHost
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+HarneSSHost is a harness-agnostic desktop host for detecting and evaluating agent harnesses. The current Phase 4A foundation provides branded host states and read-only DeepSeek Harness source detection; runtime and official-UI integration remain deferred.
