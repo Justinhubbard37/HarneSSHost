@@ -1,0 +1,3 @@
+alpha=7
+beta=5
+expected_sum=12
