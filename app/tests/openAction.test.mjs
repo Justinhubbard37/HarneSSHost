@@ -9,7 +9,13 @@ test("Open is visible only for verified launchable DeepSeek states", () => {
     label: "Open",
   });
 
-  for (const state of ["notInstalled", "problemDetected", "unsupportedLocalInstallation"]) {
+  for (const state of [
+    "notInstalled",
+    "detected",
+    "supportedNonBaseline",
+    "problemDetected",
+    "unsupportedLocalInstallation",
+  ]) {
     assert.equal(deriveOpenAction(state, false, false).visible, false);
   }
 });

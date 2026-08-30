@@ -81,6 +81,10 @@ export function HarnessDetails({ state }: HarnessDetailsProps) {
             <dd>{detectionLabel(details.detection.status)}</dd>
           </div>
           <div>
+            <dt>Classification</dt>
+            <dd>{titleCase(details.detection.classification)}</dd>
+          </div>
+          <div>
             <dt>Detected version</dt>
             <dd>{details.detection.detectedVersion ?? "Not detected"}</dd>
           </div>
@@ -90,9 +94,45 @@ export function HarnessDetails({ state }: HarnessDetailsProps) {
           </div>
           <div>
             <dt>Runtime</dt>
-            <dd>{runtimeLabel(details.runtime.phase)}</dd>
+            <dd>
+              {details.runtime.available && details.runtime.phase
+                ? runtimeLabel(details.runtime.phase)
+                : "Not available in this gate"}
+            </dd>
           </div>
         </dl>
+        {details.detection.provenance ? (
+          <dl className="baseline-list">
+            {details.detection.provenance.wslDistribution ? (
+              <div>
+                <dt>WSL distribution</dt>
+                <dd>{details.detection.provenance.wslDistribution}</dd>
+              </div>
+            ) : null}
+            {details.detection.provenance.linuxUser ? (
+              <div>
+                <dt>Linux user</dt>
+                <dd>{details.detection.provenance.linuxUser}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt>Path class</dt>
+              <dd>{titleCase(details.detection.provenance.pathClass)}</dd>
+            </div>
+            <div>
+              <dt>Architecture</dt>
+              <dd>{details.detection.provenance.architecture ?? "Not established"}</dd>
+            </div>
+            <div>
+              <dt>Filesystem</dt>
+              <dd>{details.detection.provenance.filesystem ?? "Not applicable"}</dd>
+            </div>
+            <div>
+              <dt>Track A baseline</dt>
+              <dd>{details.detection.provenance.trackABaseline ? "Yes" : "No"}</dd>
+            </div>
+          </dl>
+        ) : null}
         {details.detection.message ? (
           <p className="technical-note">{details.detection.message}</p>
         ) : null}
@@ -103,6 +143,34 @@ export function HarnessDetails({ state }: HarnessDetailsProps) {
           <code className="diagnostic-code">{details.runtime.failureCode}</code>
         ) : null}
       </section>
+
+      {details.officialInterfaces.length > 0 || details.supportedTopologies.length > 0 ? (
+        <section className="details-section" aria-labelledby={`${details.id}-catalog-heading`}>
+          <h3 id={`${details.id}-catalog-heading`}>Catalog contract</h3>
+          {details.officialInterfaces.length > 0 ? (
+            <dl className="fact-list">
+              <div>
+                <dt>Official interfaces</dt>
+                <dd>
+                  {details.officialInterfaces
+                    .map((entry) => titleCase(entry.kind))
+                    .join(", ")}
+                </dd>
+              </div>
+            </dl>
+          ) : null}
+          {details.supportedTopologies.length > 0 ? (
+            <ul>
+              {details.supportedTopologies.map((topology) => (
+                <li key={topology.topology}>
+                  {titleCase(topology.topology)} — {topology.supported ? "supported" : "unsupported"}
+                  {topology.trackABaseline ? "; Track A baseline" : "; non-baseline"}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="details-section" aria-labelledby={`${details.id}-baseline-heading`}>
         <h3 id={`${details.id}-baseline-heading`}>Tested baseline</h3>

@@ -3,6 +3,8 @@ use crate::harness::adapter::{
 };
 
 pub(crate) fn detection_context() -> DetectionContext {
+    let mut candidates = Vec::new();
+
     #[cfg(debug_assertions)]
     {
         use std::path::PathBuf;
@@ -13,17 +15,19 @@ pub(crate) fn detection_context() -> DetectionContext {
             .join("upstream")
             .join("deepseek-harness");
 
-        DetectionContext::new(vec![InstallationCandidate::new(
+        candidates.push(InstallationCandidate::new(
             HarnessId::new("deepseek"),
             CandidateSource::DevelopmentCheckout,
             checkout,
-        )])
+        ));
     }
 
-    #[cfg(not(debug_assertions))]
+    #[cfg(not(test))]
     {
-        DetectionContext::default()
+        candidates.extend(crate::harness::opencode::machine_candidates());
     }
+
+    DetectionContext::new(candidates)
 }
 
 #[cfg(test)]

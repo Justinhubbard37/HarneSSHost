@@ -1,5 +1,7 @@
 export type HarnessCardState =
   | "notInstalled"
+  | "detected"
+  | "supportedNonBaseline"
   | "ready"
   | "starting"
   | "open"
@@ -24,6 +26,18 @@ export interface HarnessLibraryPayload {
 }
 
 export type DetectionStatus = "detected" | "notInstalled" | "invalid" | "error";
+
+export type DetectionClassification =
+  | "notInstalled"
+  | "validInstallation"
+  | "validWslNative"
+  | "nativeWindowsSupported"
+  | "wrongVersion"
+  | "wrongArchitecture"
+  | "windowsPathLeakage"
+  | "ambiguousOrUntrustedProvenance"
+  | "invalid"
+  | "error";
 
 export type CompatibilityState = "testedVersionMatch" | "unverifiedVersion";
 
@@ -74,21 +88,68 @@ export interface CapabilityManifest {
 
 export interface HarnessDetectionDetails {
   status: DetectionStatus;
+  classification: DetectionClassification;
   code?: string;
   message?: string;
   detectedVersion?: string;
   compatibility?: CompatibilityState;
+  provenance?: HarnessProvenanceDetails;
 }
 
 export interface HarnessRuntimeDetails {
-  phase: RuntimePhase;
+  available: boolean;
+  phase?: RuntimePhase;
   failureCode?: string;
+}
+
+export type CandidatePathClass =
+  | "linuxNative"
+  | "windowsMounted"
+  | "windowsNative"
+  | "unknown";
+
+export type InstallationProvenance =
+  | "harnessHostOwned"
+  | "nativeWindows"
+  | "foreign"
+  | "ambiguous";
+
+export interface HarnessProvenanceDetails {
+  wslDistribution?: string;
+  linuxUser?: string;
+  architecture?: string;
+  filesystem?: string;
+  pathClass: CandidatePathClass;
+  installationProvenance: InstallationProvenance;
+  trackABaseline: boolean;
+}
+
+export type OfficialInterfaceKind =
+  | "terminalUi"
+  | "web"
+  | "desktopApp"
+  | "ideExtension";
+
+export interface OfficialInterfaceFact {
+  kind: OfficialInterfaceKind;
+  sourceReference: string;
+}
+
+export type ExecutionTopology = "wslNative" | "nativeWindows";
+
+export interface SupportedTopologyFact {
+  topology: ExecutionTopology;
+  supported: boolean;
+  trackABaseline: boolean;
+  sourceReference: string;
 }
 
 export interface HarnessDetailsPayload {
   id: string;
   displayName: string;
   description: string;
+  officialInterfaces: OfficialInterfaceFact[];
+  supportedTopologies: SupportedTopologyFact[];
   detection: HarnessDetectionDetails;
   runtime: HarnessRuntimeDetails;
   capabilityManifest: CapabilityManifest;

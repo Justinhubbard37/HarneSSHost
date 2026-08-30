@@ -170,7 +170,12 @@ fn verified_installation(
                 "A verified DeepSeek installation is required for launch.",
             ));
         }
-        Ok(DetectionReport::Invalid { .. } | DetectionReport::Error { .. }) | Err(_) => {
+        Ok(
+            DetectionReport::Invalid { .. }
+            | DetectionReport::Rejected { .. }
+            | DetectionReport::Error { .. },
+        )
+        | Err(_) => {
             return Err(DeepSeekRuntimeError::new(
                 "deepseek.launch-installation-invalid",
                 "The local DeepSeek installation did not pass verification.",

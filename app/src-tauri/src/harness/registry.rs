@@ -55,6 +55,7 @@ impl Error for RegistryError {}
 mod tests {
     use super::*;
     use crate::harness::deepseek::DeepSeekAdapter;
+    use crate::harness::opencode::OpenCodeAdapter;
 
     #[test]
     fn registers_lists_and_resolves_an_adapter() {
@@ -79,5 +80,19 @@ mod tests {
             error,
             RegistryError::DuplicateAdapter(HarnessId::new("deepseek"))
         );
+    }
+
+    #[test]
+    fn registers_both_concrete_harness_descriptors() {
+        let mut registry = HarnessRegistry::default();
+        registry.register(Arc::new(DeepSeekAdapter::new())).unwrap();
+        registry.register(Arc::new(OpenCodeAdapter::new())).unwrap();
+
+        let descriptors = registry.list();
+        assert_eq!(descriptors.len(), 2);
+        assert_eq!(descriptors[0].id.as_str(), "deepseek");
+        assert_eq!(descriptors[1].id.as_str(), "opencode");
+        assert!(registry.get(&HarnessId::new("deepseek")).is_some());
+        assert!(registry.get(&HarnessId::new("opencode")).is_some());
     }
 }

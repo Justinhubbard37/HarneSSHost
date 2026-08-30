@@ -11,6 +11,8 @@ interface HarnessCardProps {
 
 const stateLabels: Record<HarnessCardState, string> = {
   notInstalled: "Not installed",
+  detected: "Detected",
+  supportedNonBaseline: "Supported non-baseline",
   ready: "Ready",
   starting: "Opening",
   open: "Open",

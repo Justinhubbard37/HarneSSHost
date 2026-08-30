@@ -1,6 +1,7 @@
 use crate::harness::adapter::{
     AdapterError, CompatibilityState, DetectedInstallation, DetectionContext, DetectionReport,
-    HarnessAdapter, HarnessDescriptor, HarnessId, TestedVersion, VersionReport,
+    ExecutionTopology, HarnessAdapter, HarnessDescriptor, HarnessId, OfficialInterfaceFact,
+    OfficialInterfaceKind, SupportedTopologyFact, TestedVersion, VersionReport,
 };
 use crate::harness::capability::{
     CapabilityDomain, CapabilityEntry, CapabilityEvidence, CapabilityManifest, CapabilityStatus,
@@ -30,6 +31,17 @@ impl DeepSeekAdapter {
                 description:
                     "A local agent harness with chat, tools, agents, governance, and durable sessions."
                         .to_string(),
+                official_interfaces: vec![OfficialInterfaceFact {
+                    kind: OfficialInterfaceKind::Web,
+                    source_reference: "upstream/deepseek-harness/packages/bundle/web-app/src/index.ts"
+                        .to_string(),
+                }],
+                supported_topologies: vec![SupportedTopologyFact {
+                    topology: ExecutionTopology::NativeWindows,
+                    supported: true,
+                    track_a_baseline: true,
+                    source_reference: "app/src-tauri/src/runtime/windows/deepseek.rs".to_string(),
+                }],
             },
         }
     }

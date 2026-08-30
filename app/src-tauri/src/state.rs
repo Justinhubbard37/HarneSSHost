@@ -1,6 +1,7 @@
 use crate::development_candidates;
 use crate::harness::adapter::{DetectionContext, HarnessId};
 use crate::harness::deepseek::DeepSeekAdapter;
+use crate::harness::opencode::OpenCodeAdapter;
 use crate::harness::registry::{HarnessRegistry, RegistryError};
 use crate::interface::DefaultInterfaceResolver;
 use crate::runtime::controller::{RuntimeController, RuntimeSnapshot};
@@ -22,6 +23,7 @@ impl AppState {
     ) -> Result<Self, RegistryError> {
         let mut registry = HarnessRegistry::default();
         registry.register(Arc::new(DeepSeekAdapter::new()))?;
+        registry.register(Arc::new(OpenCodeAdapter::new()))?;
         let registry = Arc::new(registry);
         let runtime_controller = RuntimeController::new(
             Arc::clone(&registry),
