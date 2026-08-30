@@ -37,9 +37,31 @@ impl RuntimeState {
         self.phase
     }
 
-    #[cfg(test)]
     pub(crate) fn ownership(&self) -> RuntimeOwnership {
         self.ownership
+    }
+
+    pub(crate) fn claim_host_ownership(
+        &mut self,
+        generation: u64,
+    ) -> Result<(), RuntimeOwnershipError> {
+        Self::validate_host_generation(generation)?;
+        if self.phase != RuntimePhase::Starting || self.ownership != RuntimeOwnership::Unowned {
+            return Err(RuntimeOwnershipError);
+        }
+        self.ownership = RuntimeOwnership::HostOwned { generation };
+        Ok(())
+    }
+
+    pub(crate) fn validate_host_generation(generation: u64) -> Result<(), RuntimeOwnershipError> {
+        if generation == 0 {
+            return Err(RuntimeOwnershipError);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn release_host_ownership(&mut self) {
+        self.ownership = RuntimeOwnership::Unowned;
     }
 
     pub(crate) fn transition_to(
@@ -88,6 +110,17 @@ impl Display for RuntimeTransitionError {
 }
 
 impl Error for RuntimeTransitionError {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RuntimeOwnershipError;
+
+impl Display for RuntimeOwnershipError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("runtime ownership can only be claimed by a starting host launch")
+    }
+}
+
+impl Error for RuntimeOwnershipError {}
 
 #[cfg(test)]
 mod tests {
@@ -148,5 +181,29 @@ mod tests {
                 assert_eq!(state.ownership(), RuntimeOwnership::Unowned);
             }
         }
+    }
+
+    #[test]
+    fn ownership_requires_an_explicit_starting_host_launch() {
+        let mut state = RuntimeState::default();
+        assert_eq!(
+            RuntimeState::validate_host_generation(0),
+            Err(RuntimeOwnershipError)
+        );
+        RuntimeState::validate_host_generation(1).unwrap();
+        assert_eq!(state.claim_host_ownership(1), Err(RuntimeOwnershipError));
+        assert_eq!(state.ownership(), RuntimeOwnership::Unowned);
+
+        state.transition_to(RuntimePhase::Starting).unwrap();
+        assert_eq!(state.claim_host_ownership(0), Err(RuntimeOwnershipError));
+        state.claim_host_ownership(1).unwrap();
+        assert_eq!(
+            state.ownership(),
+            RuntimeOwnership::HostOwned { generation: 1 }
+        );
+        assert_eq!(state.claim_host_ownership(2), Err(RuntimeOwnershipError));
+
+        state.release_host_ownership();
+        assert_eq!(state.ownership(), RuntimeOwnership::Unowned);
     }
 }

@@ -64,7 +64,7 @@ impl DiagnosticBuffer {
     }
 
     #[cfg(test)]
-    fn records(&self) -> &VecDeque<DiagnosticRecord> {
+    pub(crate) fn records(&self) -> &VecDeque<DiagnosticRecord> {
         &self.records
     }
 }

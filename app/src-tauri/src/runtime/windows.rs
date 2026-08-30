@@ -7,7 +7,7 @@ use std::os::windows::ffi::OsStrExt;
 #[cfg(test)]
 use std::os::windows::io::AsRawHandle;
 use std::os::windows::io::{FromRawHandle, RawHandle};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -36,6 +36,8 @@ use windows_sys::Win32::System::Threading::{
     PROC_THREAD_ATTRIBUTE_JOB_LIST, STARTF_USESTDHANDLES, STARTUPINFOEXW,
 };
 
+pub(crate) mod deepseek;
+
 const ATTRIBUTE_COUNT: u32 = 2;
 const MAX_ARGUMENTS: usize = 32;
 const MAX_COMMAND_LINE_UNITS: usize = 32_767;
@@ -46,15 +48,27 @@ pub(super) const CONTAINED_PROCESS_CREATION_FLAGS: u32 =
 
 pub(crate) struct WindowsProcessSpec {
     executable: PathBuf,
-    arguments: Vec<OsString>,
+    command_line: WindowsCommandLine,
+    working_directory: Option<PathBuf>,
+}
+
+enum WindowsCommandLine {
+    Arguments(Vec<OsString>),
+    TrustedPrequoted(Vec<u16>),
 }
 
 impl WindowsProcessSpec {
     pub(crate) fn new(executable: PathBuf, arguments: Vec<OsString>) -> Self {
         Self {
             executable,
-            arguments,
+            command_line: WindowsCommandLine::Arguments(arguments),
+            working_directory: None,
         }
+    }
+
+    pub(crate) fn with_working_directory(mut self, working_directory: PathBuf) -> Self {
+        self.working_directory = Some(working_directory);
+        self
     }
 
     fn validate(&self) -> Result<(), WindowsSupervisorError> {
@@ -64,13 +78,50 @@ impl WindowsProcessSpec {
                 "The process executable must use an absolute path.",
             ));
         }
-        if self.arguments.len() > MAX_ARGUMENTS {
+        if let WindowsCommandLine::Arguments(arguments) = &self.command_line {
+            if arguments.len() > MAX_ARGUMENTS {
+                return Err(WindowsSupervisorError::new(
+                    "windows.spec-too-many-arguments",
+                    "The process specification contains too many arguments.",
+                ));
+            }
+        }
+        if self
+            .working_directory
+            .as_ref()
+            .is_some_and(|directory| !directory.is_absolute())
+        {
             return Err(WindowsSupervisorError::new(
-                "windows.spec-too-many-arguments",
-                "The process specification contains too many arguments.",
+                "windows.spec-working-directory-not-absolute",
+                "The process working directory must use an absolute path.",
             ));
         }
         Ok(())
+    }
+
+    fn command_line(&self) -> Result<Vec<u16>, WindowsSupervisorError> {
+        match &self.command_line {
+            WindowsCommandLine::Arguments(arguments) => {
+                build_command_line(self.executable.as_os_str(), arguments)
+            }
+            WindowsCommandLine::TrustedPrequoted(command_line) => {
+                if command_line.contains(&0) {
+                    return Err(WindowsSupervisorError::new(
+                        "windows.spec-interior-null",
+                        "The process specification contains an invalid null character.",
+                    ));
+                }
+                if command_line.len() + 1 > MAX_COMMAND_LINE_UNITS {
+                    return Err(WindowsSupervisorError::new(
+                        "windows.spec-command-line-too-long",
+                        "The process specification exceeds the Windows command-line limit.",
+                    ));
+                }
+                let mut terminated = command_line.clone();
+                terminated.push(0);
+                Ok(terminated)
+            }
+        }
     }
 }
 
@@ -211,10 +262,15 @@ where
 {
     specification.validate()?;
     let application_name = wide_null(specification.executable.as_os_str())?;
-    let mut command_line = build_command_line(
-        specification.executable.as_os_str(),
-        &specification.arguments,
-    )?;
+    let mut command_line = specification.command_line()?;
+    let working_directory = specification
+        .working_directory
+        .as_deref()
+        .map(wide_current_directory)
+        .transpose()?;
+    let working_directory_pointer = working_directory
+        .as_ref()
+        .map_or(null(), |directory| directory.as_ptr());
 
     checkpoint(LaunchCheckpoint::BeforeJobCreation)?;
     let job = create_private_job()?;
@@ -296,7 +352,7 @@ where
             1,
             CONTAINED_PROCESS_CREATION_FLAGS,
             null(),
-            null(),
+            working_directory_pointer,
             &startup.StartupInfo,
             &mut process_information,
         )
@@ -729,6 +785,40 @@ fn wide_null(value: &OsStr) -> Result<Vec<u16>, WindowsSupervisorError> {
     }
     wide.push(0);
     Ok(wide)
+}
+
+fn wide_current_directory(path: &Path) -> Result<Vec<u16>, WindowsSupervisorError> {
+    const VERBATIM_PREFIX: [u16; 4] = [b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16];
+    const VERBATIM_UNC_PREFIX: [u16; 8] = [
+        b'\\' as u16,
+        b'\\' as u16,
+        b'?' as u16,
+        b'\\' as u16,
+        b'U' as u16,
+        b'N' as u16,
+        b'C' as u16,
+        b'\\' as u16,
+    ];
+
+    let encoded = path.as_os_str().encode_wide().collect::<Vec<_>>();
+    let normalized = if encoded.starts_with(&VERBATIM_UNC_PREFIX) {
+        let mut ordinary_unc = vec![b'\\' as u16, b'\\' as u16];
+        ordinary_unc.extend_from_slice(&encoded[VERBATIM_UNC_PREFIX.len()..]);
+        ordinary_unc
+    } else if encoded.starts_with(&VERBATIM_PREFIX) {
+        encoded[VERBATIM_PREFIX.len()..].to_vec()
+    } else {
+        encoded
+    };
+    if normalized.contains(&0) {
+        return Err(WindowsSupervisorError::new(
+            "windows.spec-interior-null",
+            "The process specification contains an invalid null character.",
+        ));
+    }
+    let mut terminated = normalized;
+    terminated.push(0);
+    Ok(terminated)
 }
 
 fn build_command_line(

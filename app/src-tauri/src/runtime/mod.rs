@@ -1,12 +1,12 @@
 #[allow(dead_code)]
 // Pure bounded infrastructure for later runtime gates; Gate 4B-1 does not execute it.
 pub(crate) mod diagnostics;
-#[allow(dead_code)] // Transition producers arrive in later gates.
+#[allow(dead_code)] // Gate 4B-3 transition producers remain internal.
 pub(crate) mod domain;
-#[allow(dead_code)] // Parsing is intentionally not connected to a process in Gate 4B-1.
+#[allow(dead_code)] // Readiness remains private to the internal runtime wiring.
 pub(crate) mod readiness;
 #[cfg(windows)]
-#[allow(dead_code)] // Gate 4B-2 proves containment without wiring product lifecycle commands.
+#[allow(dead_code)] // Gate 4B-3 runtime wiring remains internal; no product command is exposed.
 pub(crate) mod windows;
 #[cfg(all(test, windows))]
 mod windows_tests;
