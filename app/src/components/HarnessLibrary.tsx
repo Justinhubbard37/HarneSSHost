@@ -3,9 +3,10 @@ import type { HarnessCardSummary } from "../host/types";
 
 interface HarnessLibraryProps {
   harnesses: HarnessCardSummary[];
+  onOpen: (harnessId: string) => Promise<void>;
 }
 
-export function HarnessLibrary({ harnesses }: HarnessLibraryProps) {
+export function HarnessLibrary({ harnesses, onOpen }: HarnessLibraryProps) {
   if (harnesses.length === 0) {
     return (
       <section className="library-state">
@@ -18,7 +19,7 @@ export function HarnessLibrary({ harnesses }: HarnessLibraryProps) {
   return (
     <section className="harness-library" aria-label="Supported harnesses">
       {harnesses.map((harness) => (
-        <HarnessCard harness={harness} key={harness.id} />
+        <HarnessCard harness={harness} key={harness.id} onOpen={onOpen} />
       ))}
     </section>
   );

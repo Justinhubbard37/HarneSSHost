@@ -137,10 +137,12 @@ impl OwnedWindowsRuntime {
         query_active_process_count(self.job.as_raw())
     }
 
+    #[cfg(test)]
     pub(crate) fn root_is_in_owned_job(&self) -> Result<bool, WindowsSupervisorError> {
         process_is_in_job(self.root_process.as_raw(), self.job.as_raw())
     }
 
+    #[cfg(test)]
     pub(crate) fn job_limit_flags(&self) -> Result<u32, WindowsSupervisorError> {
         query_job_limit_flags(self.job.as_raw())
     }
@@ -608,6 +610,7 @@ fn query_active_process_count(job: HANDLE) -> Result<u32, WindowsSupervisorError
     Ok(accounting.ActiveProcesses)
 }
 
+#[cfg(test)]
 fn query_job_limit_flags(job: HANDLE) -> Result<u32, WindowsSupervisorError> {
     let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
     let queried = unsafe {

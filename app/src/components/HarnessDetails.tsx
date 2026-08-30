@@ -99,6 +99,9 @@ export function HarnessDetails({ state }: HarnessDetailsProps) {
         {details.detection.code ? (
           <code className="diagnostic-code">{details.detection.code}</code>
         ) : null}
+        {details.runtime.failureCode ? (
+          <code className="diagnostic-code">{details.runtime.failureCode}</code>
+        ) : null}
       </section>
 
       <section className="details-section" aria-labelledby={`${details.id}-baseline-heading`}>

@@ -2,6 +2,8 @@ use crate::harness::adapter::{
     CompatibilityState, DetectionReport, HarnessAdapter, HarnessId, VersionReport,
 };
 use crate::harness::capability::CapabilityManifest;
+use crate::harness::deepseek::DEEPSEEK_ADAPTER_ID;
+use crate::interface::HostSurfaceState;
 use crate::runtime::domain::RuntimePhase;
 use crate::state::AppState;
 use serde::Serialize;
@@ -10,6 +12,7 @@ use serde::Serialize;
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HarnessLibraryDto {
     harnesses: Vec<HarnessCardDto>,
+    surface: HostSurfaceState,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -19,6 +22,9 @@ struct HarnessCardDto {
     display_name: String,
     description: String,
     state: HarnessCardStateDto,
+    can_open: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failure_message: Option<String>,
     has_details: bool,
 }
 
@@ -27,6 +33,10 @@ struct HarnessCardDto {
 enum HarnessCardStateDto {
     NotInstalled,
     Ready,
+    Starting,
+    Open,
+    Stopping,
+    Failed,
     ProblemDetected,
     UnsupportedLocalInstallation,
 }
@@ -65,32 +75,12 @@ enum DetectionStatusDto {
     Error,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeDetailsDto {
-    phase: RuntimePhaseDto,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-enum RuntimePhaseDto {
-    Inactive,
-    Starting,
-    Ready,
-    Stopping,
-    Failed,
-}
-
-impl From<RuntimePhase> for RuntimePhaseDto {
-    fn from(value: RuntimePhase) -> Self {
-        match value {
-            RuntimePhase::Inactive => Self::Inactive,
-            RuntimePhase::Starting => Self::Starting,
-            RuntimePhase::Ready => Self::Ready,
-            RuntimePhase::Stopping => Self::Stopping,
-            RuntimePhase::Failed => Self::Failed,
-        }
-    }
+    phase: RuntimePhase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failure_code: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -109,23 +99,41 @@ pub(crate) fn build_harness_library(state: &AppState) -> HarnessLibraryDto {
         .filter_map(|descriptor| {
             state.registry.get(&descriptor.id).map(|adapter| {
                 let installation_state = inspect_card_state(adapter.as_ref(), state);
-                let card_state = match state.runtime_phase(&descriptor.id) {
-                    Some(runtime_phase) => derive_card_state(installation_state, runtime_phase),
+                let runtime_snapshot = state.runtime_snapshot(&descriptor.id);
+                let card_state = match runtime_snapshot {
+                    Some(snapshot) => derive_card_state(installation_state, snapshot.phase()),
                     None => HarnessCardStateDto::ProblemDetected,
                 };
+                let can_open = installation_state == LocalInstallationState::Ready
+                    && runtime_snapshot.is_some_and(|snapshot| snapshot.can_open());
+                let failure_message = (card_state == HarnessCardStateDto::Failed).then(|| {
+                    if can_open {
+                        "DeepSeek could not be opened. Use Open to try again."
+                    } else {
+                        "DeepSeek could not be opened."
+                    }
+                    .to_string()
+                });
 
                 HarnessCardDto {
                     id: descriptor.id.as_str().to_string(),
                     display_name: descriptor.display_name,
                     description: descriptor.description,
                     state: card_state,
+                    can_open,
+                    failure_message,
                     has_details: true,
                 }
             })
         })
         .collect();
 
-    HarnessLibraryDto { harnesses }
+    let deepseek_snapshot = state
+        .runtime_snapshot(&HarnessId::new(DEEPSEEK_ADAPTER_ID))
+        .expect("the registered DeepSeek runtime snapshot must exist");
+    let surface = state.runtime_controller.resolve_surface(deepseek_snapshot);
+
+    HarnessLibraryDto { harnesses, surface }
 }
 
 pub(crate) fn build_harness_details(
@@ -134,8 +142,8 @@ pub(crate) fn build_harness_details(
 ) -> Result<HarnessDetailsDto, LibraryError> {
     let id = HarnessId::new(harness_id);
     let adapter = state.registry.get(&id).ok_or(LibraryError::NotSupported)?;
-    let runtime_phase = state
-        .runtime_phase(&id)
+    let runtime_snapshot = state
+        .runtime_snapshot(&id)
         .ok_or(LibraryError::RuntimeStateUnavailable)?;
     let descriptor = adapter.descriptor().clone();
     let (detection, version) = inspect_details(adapter.as_ref(), state);
@@ -147,7 +155,8 @@ pub(crate) fn build_harness_details(
         description: descriptor.description,
         detection,
         runtime: RuntimeDetailsDto {
-            phase: runtime_phase.into(),
+            phase: runtime_snapshot.phase(),
+            failure_code: runtime_snapshot.failure_code().map(str::to_string),
         },
         capability_manifest,
     })
@@ -232,9 +241,15 @@ fn derive_card_state(
         LocalInstallationState::Unsupported => HarnessCardStateDto::UnsupportedLocalInstallation,
         LocalInstallationState::Problem => HarnessCardStateDto::ProblemDetected,
         LocalInstallationState::Ready if runtime == RuntimePhase::Failed => {
-            HarnessCardStateDto::ProblemDetected
+            HarnessCardStateDto::Failed
         }
-        LocalInstallationState::Ready => HarnessCardStateDto::Ready,
+        LocalInstallationState::Ready => match runtime {
+            RuntimePhase::Inactive => HarnessCardStateDto::Ready,
+            RuntimePhase::Starting => HarnessCardStateDto::Starting,
+            RuntimePhase::Ready => HarnessCardStateDto::Open,
+            RuntimePhase::Stopping => HarnessCardStateDto::Stopping,
+            RuntimePhase::Failed => HarnessCardStateDto::Failed,
+        },
     }
 }
 
@@ -257,7 +272,6 @@ impl LibraryError {
 mod tests {
     use super::*;
     use crate::harness::adapter::DetectionContext;
-    use crate::runtime::domain::RuntimeOwnership;
 
     #[test]
     fn deepseek_remains_in_the_supported_catalog() {
@@ -283,19 +297,19 @@ mod tests {
 
     #[test]
     fn catalog_detection_and_runtime_state_remain_independent() {
-        let mut state = AppState::with_detection_context(DetectionContext::default()).unwrap();
+        let state = AppState::with_detection_context(DetectionContext::default()).unwrap();
         state
-            .runtime_state_mut(&HarnessId::new("deepseek"))
-            .unwrap()
-            .transition_to(RuntimePhase::Starting)
-            .unwrap();
+            .runtime_controller
+            .set_snapshot_for_test(RuntimePhase::Starting, false, None);
 
         let library = build_harness_library(&state);
 
         assert_eq!(state.registry.list().len(), 1);
         assert_eq!(state.detection_context.candidates().len(), 0);
         assert_eq!(
-            state.runtime_phase(&HarnessId::new("deepseek")),
+            state
+                .runtime_snapshot(&HarnessId::new("deepseek"))
+                .map(|snapshot| snapshot.phase()),
             Some(RuntimePhase::Starting)
         );
         assert_eq!(
@@ -316,7 +330,19 @@ mod tests {
         );
         assert_eq!(
             derive_card_state(LocalInstallationState::Ready, RuntimePhase::Failed),
-            HarnessCardStateDto::ProblemDetected
+            HarnessCardStateDto::Failed
+        );
+        assert_eq!(
+            derive_card_state(LocalInstallationState::Ready, RuntimePhase::Starting),
+            HarnessCardStateDto::Starting
+        );
+        assert_eq!(
+            derive_card_state(LocalInstallationState::Ready, RuntimePhase::Ready),
+            HarnessCardStateDto::Open
+        );
+        assert_eq!(
+            derive_card_state(LocalInstallationState::Ready, RuntimePhase::Stopping),
+            HarnessCardStateDto::Stopping
         );
         assert_eq!(
             derive_card_state(LocalInstallationState::Problem, RuntimePhase::Inactive),
@@ -326,6 +352,52 @@ mod tests {
             derive_card_state(LocalInstallationState::Unsupported, RuntimePhase::Inactive),
             HarnessCardStateDto::UnsupportedLocalInstallation
         );
+    }
+
+    #[test]
+    fn phase_4c_verified_deepseek_open_action_tracks_live_runtime_and_cleanup_state() {
+        let state = AppState::new().unwrap();
+
+        let initial = build_harness_library(&state);
+        assert_eq!(initial.harnesses[0].state, HarnessCardStateDto::Ready);
+        assert!(initial.harnesses[0].can_open);
+
+        for (phase, cleanup_complete, expected_state, expected_open) in [
+            (
+                RuntimePhase::Starting,
+                false,
+                HarnessCardStateDto::Starting,
+                false,
+            ),
+            (RuntimePhase::Ready, false, HarnessCardStateDto::Open, true),
+            (
+                RuntimePhase::Stopping,
+                false,
+                HarnessCardStateDto::Stopping,
+                false,
+            ),
+            (
+                RuntimePhase::Failed,
+                false,
+                HarnessCardStateDto::Failed,
+                false,
+            ),
+            (
+                RuntimePhase::Failed,
+                true,
+                HarnessCardStateDto::Failed,
+                true,
+            ),
+        ] {
+            state.runtime_controller.set_snapshot_for_test(
+                phase,
+                cleanup_complete,
+                Some("deepseek.test-failure"),
+            );
+            let library = build_harness_library(&state);
+            assert_eq!(library.harnesses[0].state, expected_state);
+            assert_eq!(library.harnesses[0].can_open, expected_open);
+        }
     }
 
     #[test]
@@ -378,10 +450,10 @@ mod tests {
             assert!(!json.contains(forbidden), "unexpected field: {forbidden}");
         }
 
-        let runtime = state
-            .runtime_state(&HarnessId::new("deepseek"))
+        let snapshot = state
+            .runtime_snapshot(&HarnessId::new("deepseek"))
             .expect("DeepSeek runtime state must exist");
-        assert_eq!(runtime.ownership(), RuntimeOwnership::Unowned);
+        assert_eq!(snapshot.phase(), RuntimePhase::Inactive);
     }
 
     #[test]

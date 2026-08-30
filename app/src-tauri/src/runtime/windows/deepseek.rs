@@ -139,6 +139,7 @@ pub(crate) fn prepare_deepseek_launch(
     build_launch_plan(installation, tools)
 }
 
+#[cfg(test)]
 fn prepare_deepseek_launch_with_tools(
     registry: &HarnessRegistry,
     detection_context: &DetectionContext,
@@ -398,6 +399,10 @@ impl DeepSeekRuntimeLifecycle {
         self.state.phase()
     }
 
+    fn take_ready_target(&mut self) -> Option<SensitiveReadyTarget> {
+        self.ready_target.take()
+    }
+
     pub(crate) fn begin_launch(&mut self) -> Result<(), DeepSeekRuntimeError> {
         self.state
             .transition_to(RuntimePhase::Starting)
@@ -460,6 +465,7 @@ impl DeepSeekRuntimeLifecycle {
         Ok(update)
     }
 
+    #[cfg(test)]
     pub(crate) fn process_exited_before_readiness(&mut self) -> Result<(), DeepSeekRuntimeError> {
         if self.state.phase() != RuntimePhase::Starting {
             return Err(DeepSeekRuntimeError::invalid_transition());
@@ -580,38 +586,47 @@ impl DeepSeekOwnedRuntime {
         self.process.take_stderr()
     }
 
+    pub(crate) fn take_ready_target(&mut self) -> Option<SensitiveReadyTarget> {
+        self.lifecycle.take_ready_target()
+    }
+
+    pub(crate) fn record_sanitized_stderr(&mut self, source: &str) {
+        self.lifecycle.record_sanitized_stderr(source);
+    }
+
     pub(crate) fn ingest_stdout(
         &mut self,
         chunk: &[u8],
     ) -> Result<DeepSeekReadinessUpdate, DeepSeekRuntimeError> {
         let update = self.lifecycle.ingest_stdout(chunk)?;
         if matches!(update, DeepSeekReadinessUpdate::Failed { .. }) {
-            self.process.terminate_owned_job().map_err(|error| {
-                DeepSeekRuntimeError::from_windows(
-                    "deepseek.failed-runtime-cleanup-failed",
-                    "The failed owned DeepSeek Job could not be terminated.",
-                    &error,
-                )
-            })?;
-            if !self
-                .process
-                .wait_for_empty(OWNED_STOP_TIMEOUT)
-                .map_err(|error| {
-                    DeepSeekRuntimeError::from_windows(
-                        "deepseek.failed-runtime-observation-failed",
-                        "The failed owned DeepSeek Job could not be observed during cleanup.",
-                        &error,
-                    )
-                })?
-            {
-                return Err(DeepSeekRuntimeError::new(
-                    "deepseek.failed-runtime-cleanup-timeout",
-                    "The failed owned DeepSeek Job did not become inactive within the cleanup bound.",
-                ));
-            }
-            self.lifecycle.complete_failed_runtime_cleanup()?;
+            self.cleanup_failed_owned_runtime()?;
         }
         Ok(update)
+    }
+
+    pub(crate) fn fail_owned_runtime(
+        &mut self,
+        code: &'static str,
+        message: &'static str,
+    ) -> Result<(), DeepSeekRuntimeError> {
+        self.lifecycle.fail(code, message)?;
+        self.cleanup_failed_owned_runtime()
+    }
+
+    pub(crate) fn reconcile_unexpected_root_exit(&mut self) -> Result<(), DeepSeekRuntimeError> {
+        let (code, message) = match self.lifecycle.phase() {
+            RuntimePhase::Starting => (
+                "deepseek.process-exited-before-readiness",
+                "The owned process exited before readiness was established.",
+            ),
+            RuntimePhase::Ready => (
+                "deepseek.runtime-exited-unexpectedly",
+                "The owned DeepSeek runtime exited unexpectedly.",
+            ),
+            _ => return Err(DeepSeekRuntimeError::invalid_transition()),
+        };
+        self.fail_owned_runtime(code, message)
     }
 
     pub(crate) fn wait_for_root_exit(
@@ -627,6 +642,7 @@ impl DeepSeekOwnedRuntime {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn reconcile_exit_before_readiness(
         &mut self,
         timeout: Duration,
@@ -673,6 +689,33 @@ impl DeepSeekOwnedRuntime {
             ));
         }
         self.lifecycle.complete_stop()
+    }
+
+    fn cleanup_failed_owned_runtime(&mut self) -> Result<(), DeepSeekRuntimeError> {
+        self.process.terminate_owned_job().map_err(|error| {
+            DeepSeekRuntimeError::from_windows(
+                "deepseek.failed-runtime-cleanup-failed",
+                "The failed owned DeepSeek Job could not be terminated.",
+                &error,
+            )
+        })?;
+        if !self
+            .process
+            .wait_for_empty(OWNED_STOP_TIMEOUT)
+            .map_err(|error| {
+                DeepSeekRuntimeError::from_windows(
+                    "deepseek.failed-runtime-observation-failed",
+                    "The failed owned DeepSeek Job could not be observed during cleanup.",
+                    &error,
+                )
+            })?
+        {
+            return Err(DeepSeekRuntimeError::new(
+                "deepseek.failed-runtime-cleanup-timeout",
+                "The failed owned DeepSeek Job did not become inactive within the cleanup bound.",
+            ));
+        }
+        self.lifecycle.complete_failed_runtime_cleanup()
     }
 }
 
@@ -1083,6 +1126,13 @@ mod tests {
         );
         assert_eq!(runtime.phase(), RuntimePhase::Ready);
         assert!(runtime.take_stderr().is_some());
+        runtime.reconcile_unexpected_root_exit().unwrap();
+        assert_eq!(runtime.phase(), RuntimePhase::Failed);
+        assert_eq!(
+            runtime.lifecycle.state.ownership(),
+            RuntimeOwnership::Unowned
+        );
+        assert_eq!(runtime.process.active_process_count().unwrap(), 0);
     }
 
     #[test]

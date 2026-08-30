@@ -1,10 +1,11 @@
 use serde::Serialize;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(dead_code)] // Phase 4A exposes these branded host states before all producers exist.
 pub(crate) enum InterfaceFacts {
     NoHarnessActive,
     Loading,
+    OfficialInterfaceAvailable,
+    #[allow(dead_code)] // Preserved host seam; no current supported adapter produces it.
     Unavailable(String),
     Error(String),
 }
@@ -14,6 +15,7 @@ pub(crate) enum InterfaceFacts {
 pub(crate) enum HostSurfaceKind {
     NoHarnessActive,
     Loading,
+    OfficialInterfaceAvailable,
     Unavailable,
     Error,
 }
@@ -42,7 +44,14 @@ impl InterfaceResolver for DefaultInterfaceResolver {
             },
             InterfaceFacts::Loading => HostSurfaceState {
                 kind: HostSurfaceKind::Loading,
-                message: Some("Checking local harnesses.".to_string()),
+                message: Some("Preparing the official DeepSeek interface.".to_string()),
+            },
+            InterfaceFacts::OfficialInterfaceAvailable => HostSurfaceState {
+                kind: HostSurfaceKind::OfficialInterfaceAvailable,
+                message: Some(
+                    "The official DeepSeek interface is open in a separate HarneSSHost window."
+                        .to_string(),
+                ),
             },
             InterfaceFacts::Unavailable(message) => HostSurfaceState {
                 kind: HostSurfaceKind::Unavailable,
@@ -74,6 +83,12 @@ mod tests {
         );
         assert_eq!(
             resolver
+                .resolve(InterfaceFacts::OfficialInterfaceAvailable)
+                .kind,
+            HostSurfaceKind::OfficialInterfaceAvailable
+        );
+        assert_eq!(
+            resolver
                 .resolve(InterfaceFacts::Unavailable("Unavailable".to_string()))
                 .kind,
             HostSurfaceKind::Unavailable
@@ -84,5 +99,16 @@ mod tests {
                 .kind,
             HostSurfaceKind::Error
         );
+    }
+
+    #[test]
+    fn phase_4c_official_interface_resolution_is_credential_free() {
+        let surface = DefaultInterfaceResolver.resolve(InterfaceFacts::OfficialInterfaceAvailable);
+        let json = serde_json::to_string(&surface).unwrap();
+
+        assert_eq!(surface.kind, HostSurfaceKind::OfficialInterfaceAvailable);
+        for forbidden in ["token", "authenticatedUrl", "?token=", "127.0.0.1"] {
+            assert!(!json.contains(forbidden), "unexpected value: {forbidden}");
+        }
     }
 }

@@ -1,15 +1,17 @@
 import { HarnessLibrary } from "./HarnessLibrary";
+import { InterfaceViewport } from "./InterfaceViewport";
 import type { HarnessLibraryState } from "../host/useHarnessLibrary";
 
 interface HostShellProps {
   libraryState: {
     state: HarnessLibraryState;
-    refresh: () => Promise<void>;
+    refresh: (showLoading?: boolean) => Promise<void>;
+    open: (harnessId: string) => Promise<void>;
   };
 }
 
 export function HostShell({ libraryState }: HostShellProps) {
-  const { state, refresh } = libraryState;
+  const { state, refresh, open } = libraryState;
 
   return (
     <main className="host-shell">
@@ -38,7 +40,12 @@ export function HostShell({ libraryState }: HostShellProps) {
         </section>
       ) : null}
 
-      {state.status === "ready" ? <HarnessLibrary harnesses={state.library.harnesses} /> : null}
+      {state.status === "ready" ? (
+        <>
+          <HarnessLibrary harnesses={state.library.harnesses} onOpen={open} />
+          <InterfaceViewport state={state.library.surface} />
+        </>
+      ) : null}
     </main>
   );
 }

@@ -1,6 +1,10 @@
 export type HarnessCardState =
   | "notInstalled"
   | "ready"
+  | "starting"
+  | "open"
+  | "stopping"
+  | "failed"
   | "problemDetected"
   | "unsupportedLocalInstallation";
 
@@ -9,11 +13,14 @@ export interface HarnessCardSummary {
   displayName: string;
   description: string;
   state: HarnessCardState;
+  canOpen: boolean;
+  failureMessage?: string;
   hasDetails: boolean;
 }
 
 export interface HarnessLibraryPayload {
   harnesses: HarnessCardSummary[];
+  surface: HostSurfaceState;
 }
 
 export type DetectionStatus = "detected" | "notInstalled" | "invalid" | "error";
@@ -75,6 +82,7 @@ export interface HarnessDetectionDetails {
 
 export interface HarnessRuntimeDetails {
   phase: RuntimePhase;
+  failureCode?: string;
 }
 
 export interface HarnessDetailsPayload {
@@ -87,6 +95,24 @@ export interface HarnessDetailsPayload {
 }
 
 export interface HostSurfaceState {
-  kind: "noHarnessActive" | "loading" | "unavailable" | "error";
+  kind:
+    | "noHarnessActive"
+    | "loading"
+    | "officialInterfaceAvailable"
+    | "unavailable"
+    | "error";
   message?: string;
+}
+
+export interface OpenHarnessResult {
+  phase: RuntimePhase;
+  canOpen: boolean;
+  surface: HostSurfaceState;
+}
+
+export interface RuntimeChangedEvent {
+  harnessId: string;
+  phase: RuntimePhase;
+  canOpen: boolean;
+  surface: HostSurfaceState;
 }

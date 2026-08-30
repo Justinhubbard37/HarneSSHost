@@ -31,6 +31,15 @@ impl SensitiveReadyTarget {
         self.origin.port
     }
 
+    pub(crate) fn into_authenticated_url(self) -> Url {
+        let mut url = Url::parse("http://127.0.0.1/")
+            .expect("the fixed DeepSeek loopback origin must be a valid URL");
+        url.set_port(Some(self.origin.port.get()))
+            .expect("the fixed HTTP URL accepts an explicit port");
+        url.query_pairs_mut().append_pair("token", &self.token);
+        url
+    }
+
     fn token_matches(&self, token: &str) -> bool {
         self.token.as_ref() == token
     }
@@ -330,6 +339,18 @@ mod tests {
         assert!(!debug.contains("?token="));
         assert!(!display.contains("?token="));
         assert!(debug.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn phase_4c_authenticated_url_is_available_only_from_the_sensitive_backend_type() {
+        let target = one_result(&ready_line(3080, TOKEN)).unwrap();
+        let url = target.into_authenticated_url();
+
+        assert_eq!(url.scheme(), "http");
+        assert_eq!(url.host_str(), Some("127.0.0.1"));
+        assert_eq!(url.port(), Some(3080));
+        let expected_query = format!("token={TOKEN}");
+        assert_eq!(url.query(), Some(expected_query.as_str()));
     }
 
     #[test]

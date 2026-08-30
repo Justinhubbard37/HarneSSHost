@@ -5,9 +5,15 @@ interface InterfaceViewportProps {
 }
 
 export function InterfaceViewport({ state }: InterfaceViewportProps) {
+  if (state.kind === "noHarnessActive") {
+    return null;
+  }
+
   const title =
     state.kind === "loading"
-      ? "Interface loading"
+      ? "Interface opening"
+      : state.kind === "officialInterfaceAvailable"
+        ? "Official interface open"
       : state.kind === "unavailable"
         ? "Interface unavailable"
         : state.kind === "error"
@@ -15,12 +21,15 @@ export function InterfaceViewport({ state }: InterfaceViewportProps) {
           : "No harness interface active";
 
   return (
-    <section className="panel interface-viewport" aria-labelledby="interface-heading">
-      <p className="section-label">Interface viewport</p>
+    <section
+      className={`interface-status interface-status-${state.kind}`}
+      aria-labelledby="interface-heading"
+      aria-live="polite"
+    >
       <h2 id="interface-heading">{title}</h2>
-      <p className="muted">
+      <p>
         {state.message ??
-          "HarneSSHost remains in its branded host state until a harness runtime and interface are explicitly available."}
+          "HarneSSHost is coordinating the official harness interface."}
       </p>
     </section>
   );
