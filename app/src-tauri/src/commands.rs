@@ -1,7 +1,7 @@
 use crate::library::{
     build_harness_details, build_harness_library, HarnessDetailsDto, HarnessLibraryDto,
 };
-use crate::runtime::controller::OpenHarnessResultDto;
+use crate::runtime::controller::{OpenHarnessResultDto, RuntimeFailureDto};
 use crate::state::AppState;
 
 #[tauri::command]
@@ -22,9 +22,6 @@ pub(crate) async fn open_harness(
     harness_id: String,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<OpenHarnessResultDto, String> {
-    state
-        .runtime_controller
-        .open_harness(&app, &harness_id)
-        .map_err(str::to_string)
+) -> Result<OpenHarnessResultDto, RuntimeFailureDto> {
+    state.runtime_controller.open_harness(&app, &harness_id)
 }

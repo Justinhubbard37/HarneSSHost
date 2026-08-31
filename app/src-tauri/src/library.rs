@@ -5,7 +5,6 @@ use crate::harness::adapter::{
     SupportedTopologyFact, VersionReport,
 };
 use crate::harness::capability::CapabilityManifest;
-use crate::harness::deepseek::DEEPSEEK_ADAPTER_ID;
 use crate::interface::HostSurfaceState;
 use crate::runtime::domain::RuntimePhase;
 use crate::state::AppState;
@@ -143,20 +142,21 @@ pub(crate) fn build_harness_library(state: &AppState) -> HarnessLibraryDto {
             state.registry.get(&descriptor.id).map(|adapter| {
                 let installation_state = inspect_card_state(adapter.as_ref(), state);
                 let runtime_snapshot = state.runtime_snapshot(&descriptor.id);
-                let card_state = match runtime_snapshot {
+                let card_state = match runtime_snapshot.as_ref() {
                     Some(snapshot) => derive_card_state(installation_state, snapshot.phase()),
                     None => derive_catalog_only_card_state(installation_state),
                 };
                 let can_open = matches!(installation_state, LocalInstallationState::Ready(_))
-                    && runtime_snapshot.is_some_and(|snapshot| snapshot.can_open());
-                let failure_message = (card_state == HarnessCardStateDto::Failed).then(|| {
-                    if can_open {
-                        "DeepSeek could not be opened. Use Open to try again."
-                    } else {
-                        "DeepSeek could not be opened."
-                    }
-                    .to_string()
-                });
+                    && runtime_snapshot
+                        .as_ref()
+                        .is_some_and(|snapshot| snapshot.can_open());
+                let runtime_name = state
+                    .runtime_controller
+                    .presentation_name(&descriptor.id)
+                    .unwrap_or(&descriptor.display_name)
+                    .to_string();
+                let failure_message = (card_state == HarnessCardStateDto::Failed)
+                    .then(|| runtime_failure_message(&runtime_name, can_open));
 
                 HarnessCardDto {
                     id: descriptor.id.as_str().to_string(),
@@ -171,10 +171,7 @@ pub(crate) fn build_harness_library(state: &AppState) -> HarnessLibraryDto {
         })
         .collect();
 
-    let deepseek_snapshot = state
-        .runtime_snapshot(&HarnessId::new(DEEPSEEK_ADAPTER_ID))
-        .expect("the registered DeepSeek runtime snapshot must exist");
-    let surface = state.runtime_controller.resolve_surface(deepseek_snapshot);
+    let surface = state.runtime_controller.surface();
 
     HarnessLibraryDto { harnesses, surface }
 }
@@ -199,13 +196,22 @@ pub(crate) fn build_harness_details(
         detection,
         runtime: RuntimeDetailsDto {
             available: runtime_snapshot.is_some(),
-            phase: runtime_snapshot.map(|snapshot| snapshot.phase()),
+            phase: runtime_snapshot.as_ref().map(|snapshot| snapshot.phase()),
             failure_code: runtime_snapshot
+                .as_ref()
                 .and_then(|snapshot| snapshot.failure_code())
                 .map(str::to_string),
         },
         capability_manifest,
     })
+}
+
+fn runtime_failure_message(display_name: &str, can_open: bool) -> String {
+    if can_open {
+        format!("{display_name} could not be opened. Use Open to try again.")
+    } else {
+        format!("{display_name} could not be opened.")
+    }
 }
 
 fn inspect_card_state(adapter: &dyn HarnessAdapter, state: &AppState) -> LocalInstallationState {
@@ -498,9 +504,12 @@ mod tests {
     #[test]
     fn catalog_detection_and_runtime_state_remain_independent() {
         let state = AppState::with_detection_context(DetectionContext::default()).unwrap();
-        state
-            .runtime_controller
-            .set_snapshot_for_test(RuntimePhase::Starting, false, None);
+        state.runtime_controller.set_snapshot_for_test(
+            &HarnessId::new("deepseek"),
+            RuntimePhase::Starting,
+            false,
+            None,
+        );
 
         let library = build_harness_library(&state);
 
@@ -605,6 +614,7 @@ mod tests {
             ),
         ] {
             state.runtime_controller.set_snapshot_for_test(
+                &HarnessId::new("deepseek"),
                 phase,
                 cleanup_complete,
                 Some("deepseek.test-failure"),
@@ -669,6 +679,8 @@ mod tests {
             .runtime_snapshot(&HarnessId::new("deepseek"))
             .expect("DeepSeek runtime state must exist");
         assert_eq!(snapshot.phase(), RuntimePhase::Inactive);
+        assert_eq!(snapshot.harness_id().as_str(), "deepseek");
+        assert_eq!(snapshot.generation(), 0);
     }
 
     #[test]
@@ -686,6 +698,18 @@ mod tests {
         assert!(state
             .runtime_snapshot(&HarnessId::new("opencode"))
             .is_none());
+    }
+
+    #[test]
+    fn generic_runtime_failure_copy_uses_the_harness_display_name() {
+        assert_eq!(
+            runtime_failure_message("OpenCode", false),
+            "OpenCode could not be opened."
+        );
+        assert_eq!(
+            runtime_failure_message("DeepSeek", true),
+            "DeepSeek could not be opened. Use Open to try again."
+        );
     }
 
     #[test]

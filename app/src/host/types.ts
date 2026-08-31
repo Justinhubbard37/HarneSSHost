@@ -166,6 +166,7 @@ export interface HostSurfaceState {
 }
 
 export interface OpenHarnessResult {
+  harnessId: string;
   phase: RuntimePhase;
   canOpen: boolean;
   surface: HostSurfaceState;

@@ -1,4 +1,4 @@
-use crate::runtime::controller::RuntimeController;
+use crate::runtime::driver::RuntimeGenerationReporter;
 use crate::runtime::readiness::SensitiveReadyTarget;
 use std::fmt::{Debug, Display, Formatter};
 use std::num::NonZeroU16;
@@ -49,8 +49,7 @@ impl PresentationHandle {
 pub(crate) fn present_official_deepseek_interface(
     app: &tauri::AppHandle,
     target: SensitiveReadyTarget,
-    generation: u64,
-    controller: RuntimeController,
+    reporter: RuntimeGenerationReporter,
 ) -> Result<PresentationHandle, PresenterError> {
     let origin = ExactOwnedOrigin::new(target.port());
     let authenticated_url = target.into_authenticated_url();
@@ -86,7 +85,7 @@ pub(crate) fn present_official_deepseek_interface(
             api.prevent_close();
             if !event_close_requested.swap(true, Ordering::AcqRel) {
                 let _ = event_window.hide();
-                controller.request_presentation_close(&event_app, generation);
+                reporter.presentation_closed(&event_app);
             }
         }
     });

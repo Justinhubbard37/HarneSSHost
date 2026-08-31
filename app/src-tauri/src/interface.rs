@@ -1,10 +1,16 @@
+use crate::runtime::driver::RuntimePresentationClass;
 use serde::Serialize;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum InterfaceFacts {
     NoHarnessActive,
-    Loading,
-    OfficialInterfaceAvailable,
+    Loading {
+        harness_name: String,
+    },
+    OfficialInterfaceAvailable {
+        harness_name: String,
+        presentation: RuntimePresentationClass,
+    },
     #[allow(dead_code)] // Preserved host seam; no current supported adapter produces it.
     Unavailable(String),
     Error(String),
@@ -42,16 +48,23 @@ impl InterfaceResolver for DefaultInterfaceResolver {
                 kind: HostSurfaceKind::NoHarnessActive,
                 message: None,
             },
-            InterfaceFacts::Loading => HostSurfaceState {
+            InterfaceFacts::Loading { harness_name } => HostSurfaceState {
                 kind: HostSurfaceKind::Loading,
-                message: Some("Preparing the official DeepSeek interface.".to_string()),
+                message: Some(format!("Preparing the official {harness_name} interface.")),
             },
-            InterfaceFacts::OfficialInterfaceAvailable => HostSurfaceState {
+            InterfaceFacts::OfficialInterfaceAvailable {
+                harness_name,
+                presentation,
+            } => HostSurfaceState {
                 kind: HostSurfaceKind::OfficialInterfaceAvailable,
-                message: Some(
-                    "The official DeepSeek interface is open in a separate HarneSSHost window."
-                        .to_string(),
-                ),
+                message: Some(match presentation {
+                    RuntimePresentationClass::OwnedIncognitoWebview => format!(
+                        "The official {harness_name} interface is open in a separate HarneSSHost window."
+                    ),
+                    RuntimePresentationClass::PersistentExternalBrowser => format!(
+                        "The official {harness_name} interface is open in an external browser."
+                    ),
+                }),
             },
             InterfaceFacts::Unavailable(message) => HostSurfaceState {
                 kind: HostSurfaceKind::Unavailable,
@@ -78,12 +91,19 @@ mod tests {
             HostSurfaceKind::NoHarnessActive
         );
         assert_eq!(
-            resolver.resolve(InterfaceFacts::Loading).kind,
+            resolver
+                .resolve(InterfaceFacts::Loading {
+                    harness_name: "DeepSeek".to_string(),
+                })
+                .kind,
             HostSurfaceKind::Loading
         );
         assert_eq!(
             resolver
-                .resolve(InterfaceFacts::OfficialInterfaceAvailable)
+                .resolve(InterfaceFacts::OfficialInterfaceAvailable {
+                    harness_name: "DeepSeek".to_string(),
+                    presentation: RuntimePresentationClass::OwnedIncognitoWebview,
+                })
                 .kind,
             HostSurfaceKind::OfficialInterfaceAvailable
         );
@@ -103,7 +123,11 @@ mod tests {
 
     #[test]
     fn phase_4c_official_interface_resolution_is_credential_free() {
-        let surface = DefaultInterfaceResolver.resolve(InterfaceFacts::OfficialInterfaceAvailable);
+        let surface =
+            DefaultInterfaceResolver.resolve(InterfaceFacts::OfficialInterfaceAvailable {
+                harness_name: "DeepSeek".to_string(),
+                presentation: RuntimePresentationClass::OwnedIncognitoWebview,
+            });
         let json = serde_json::to_string(&surface).unwrap();
 
         assert_eq!(surface.kind, HostSurfaceKind::OfficialInterfaceAvailable);

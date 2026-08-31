@@ -102,7 +102,7 @@ export function HarnessCard({ harness, onOpen }: HarnessCardProps) {
       ) : null}
       {openError ? (
         <p className="harness-action-message harness-action-error" role="alert">
-          DeepSeek could not be opened. Technical information is available under Details.
+          {harness.displayName} could not be opened. Technical information is available under Details.
         </p>
       ) : null}
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { deriveOpenAction } from "../src/host/openAction.ts";
 
-test("Open is visible only for verified launchable DeepSeek states", () => {
+test("Open is visible only for verified launchable runtime states", () => {
   assert.deepEqual(deriveOpenAction("ready", true, false), {
     visible: true,
     disabled: false,

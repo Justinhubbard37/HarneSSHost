@@ -5,6 +5,8 @@ use crate::harness::opencode::OpenCodeAdapter;
 use crate::harness::registry::{HarnessRegistry, RegistryError};
 use crate::interface::DefaultInterfaceResolver;
 use crate::runtime::controller::{RuntimeController, RuntimeSnapshot};
+use crate::runtime::deepseek_driver::DeepSeekRuntimeDriver;
+use crate::runtime::driver::HarnessRuntimeDriver;
 use std::sync::Arc;
 
 pub(crate) struct AppState {
@@ -25,11 +27,11 @@ impl AppState {
         registry.register(Arc::new(DeepSeekAdapter::new()))?;
         registry.register(Arc::new(OpenCodeAdapter::new()))?;
         let registry = Arc::new(registry);
-        let runtime_controller = RuntimeController::new(
-            Arc::clone(&registry),
-            detection_context.clone(),
-            Arc::new(DefaultInterfaceResolver),
-        );
+        let runtime_drivers: Vec<Arc<dyn HarnessRuntimeDriver>> = vec![Arc::new(
+            DeepSeekRuntimeDriver::new(Arc::clone(&registry), detection_context.clone()),
+        )];
+        let runtime_controller =
+            RuntimeController::new(runtime_drivers, Arc::new(DefaultInterfaceResolver));
 
         Ok(Self {
             registry,
