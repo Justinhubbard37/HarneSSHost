@@ -1,5 +1,5 @@
-upstream/
 runs/
+.pnpm-store/
 node_modules/
 target/
 dist/

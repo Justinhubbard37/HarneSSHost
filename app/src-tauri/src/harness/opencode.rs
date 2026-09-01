@@ -846,21 +846,6 @@ mod tests {
         assert!(!script.contains("$PATH"));
     }
 
-    #[cfg(windows)]
-    #[test]
-    fn current_machine_reports_opencode_not_installed() {
-        let context = DetectionContext::new(machine_candidates());
-        let report = OpenCodeAdapter::new().detect(&context).unwrap();
-
-        assert!(matches!(
-            report,
-            DetectionReport::NotFound {
-                code: "opencode.not-installed",
-                ..
-            }
-        ));
-    }
-
     #[test]
     fn capability_manifest_is_version_scoped() {
         let manifest = OpenCodeAdapter::new().capability_manifest(None);

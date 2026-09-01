@@ -1,3 +1,5 @@
 # HarneSSHost
 
-HarneSSHost is a harness-agnostic desktop host for detecting and evaluating agent harnesses. The current Phase 4A foundation provides branded host states and read-only DeepSeek Harness source detection; runtime and official-UI integration remain deferred.
+This directory contains the HarneSSHost Tauri v2 application. The current code includes DeepSeek Harness discovery, owned native-Windows lifecycle behavior, and official Web interface handoff, together with OpenCode discovery/provenance support and the generic runtime foundation completed through OC-5.
+
+See the [repository README](../README.md) for project layout, governance links, and non-live verification commands. OC-6 is not part of the current implementation state.

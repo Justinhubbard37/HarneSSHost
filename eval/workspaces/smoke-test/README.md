@@ -1,3 +1,3 @@
-# DSH Smoke Test Workspace
+# DeepSeek Harness Smoke-Test Workspace
 
 Controlled workspace for validating DeepSeek Harness read/write and tool behavior.

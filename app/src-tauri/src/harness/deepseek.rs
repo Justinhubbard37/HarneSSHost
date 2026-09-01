@@ -33,8 +33,9 @@ impl DeepSeekAdapter {
                         .to_string(),
                 official_interfaces: vec![OfficialInterfaceFact {
                     kind: OfficialInterfaceKind::Web,
-                    source_reference: "upstream/deepseek-harness/packages/bundle/web-app/src/index.ts"
-                        .to_string(),
+                    source_reference:
+                        "../upstream/deepseek-harness/packages/bundle/web-app/src/index.ts"
+                            .to_string(),
                 }],
                 supported_topologies: vec![SupportedTopologyFact {
                     topology: ExecutionTopology::NativeWindows,
