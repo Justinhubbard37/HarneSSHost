@@ -1,15 +1,17 @@
-use super::{
-    append_quoted_argument, launch_contained, OwnedWindowsRuntime, WindowsCommandLine,
-    WindowsProcessSpec, WindowsSupervisorError,
-};
 use crate::harness::adapter::{
     CompatibilityState, DetectedInstallation, DetectionContext, DetectionReport, HarnessId,
 };
-use crate::harness::deepseek::DEEPSEEK_ADAPTER_ID;
 use crate::harness::registry::HarnessRegistry;
+use crate::integrations::deepseek::adapter::DEEPSEEK_ADAPTER_ID;
+use crate::integrations::deepseek::readiness::{
+    sanitize_diagnostic, DeepSeekReadinessParser, SensitiveReadyTarget,
+};
 use crate::runtime::diagnostics::DiagnosticBuffer;
 use crate::runtime::domain::{RuntimeOwnership, RuntimePhase, RuntimeState};
-use crate::runtime::readiness::{DeepSeekReadinessParser, SensitiveReadyTarget};
+use crate::runtime::windows::{
+    append_quoted_argument, launch_contained, OwnedWindowsRuntime, WindowsProcessSpec,
+    WindowsSupervisorError,
+};
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt::{Debug, Display, Formatter};
@@ -204,9 +206,9 @@ fn build_launch_plan(
     tools: ResolvedWindowsTools,
 ) -> Result<DeepSeekLaunchPlan, DeepSeekRuntimeError> {
     let command_line = build_fixed_command_line(&tools.command_processor, &tools.corepack_shim)?;
-    let mut specification = WindowsProcessSpec::new(tools.command_processor, Vec::new())
-        .with_working_directory(installation.path().to_path_buf());
-    specification.command_line = WindowsCommandLine::TrustedPrequoted(command_line);
+    let specification = WindowsProcessSpec::new(tools.command_processor, Vec::new())
+        .with_working_directory(installation.path().to_path_buf())
+        .with_trusted_prequoted_command_line(command_line);
     Ok(DeepSeekLaunchPlan { specification })
 }
 
@@ -475,7 +477,7 @@ impl DeepSeekRuntimeLifecycle {
         if self.state.phase() != RuntimePhase::Starting {
             return Err(DeepSeekRuntimeError::invalid_transition());
         }
-        self.diagnostics.record(
+        self.record_diagnostic(
             "deepseek.process-exited-before-readiness",
             "The owned process exited before readiness was established.",
         );
@@ -519,16 +521,20 @@ impl DeepSeekRuntimeLifecycle {
     }
 
     pub(crate) fn record_sanitized_stderr(&mut self, source: &str) {
-        self.diagnostics.record("deepseek.stderr", source);
+        self.record_diagnostic("deepseek.stderr", source);
     }
 
     fn fail(&mut self, code: &'static str, message: &str) -> Result<(), DeepSeekRuntimeError> {
-        self.diagnostics.record(code, message);
+        self.record_diagnostic(code, message);
         self.ready_target = None;
         self.parser = DeepSeekReadinessParser::default();
         self.state
             .transition_to(RuntimePhase::Failed)
             .map_err(|_| DeepSeekRuntimeError::invalid_transition())
+    }
+
+    fn record_diagnostic(&mut self, code: &'static str, source: &str) {
+        self.diagnostics.record(code, &sanitize_diagnostic(source));
     }
 }
 
@@ -793,9 +799,9 @@ impl Error for DeepSeekRuntimeError {}
 mod tests {
     use super::*;
     use crate::harness::adapter::{CandidateSource, InstallationCandidate};
-    use crate::harness::deepseek::{DeepSeekAdapter, TESTED_VERSION};
+    use crate::integrations::app_state;
+    use crate::integrations::deepseek::adapter::{DeepSeekAdapter, TESTED_VERSION};
     use crate::library::build_harness_library;
-    use crate::state::AppState;
     use std::io::Read;
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -874,12 +880,13 @@ mod tests {
     }
 
     fn command_line(plan: &DeepSeekLaunchPlan) -> String {
-        match &plan.specification.command_line {
-            WindowsCommandLine::TrustedPrequoted(units) => {
-                OsString::from_wide(units).to_string_lossy().into_owned()
-            }
-            WindowsCommandLine::Arguments(_) => panic!("expected fixed command line"),
-        }
+        OsString::from_wide(
+            plan.specification
+                .trusted_prequoted_command_line()
+                .expect("expected fixed command line"),
+        )
+        .to_string_lossy()
+        .into_owned()
     }
 
     fn verified_plan(
@@ -910,10 +917,10 @@ mod tests {
         let expected_corepack = fixture.corepack_shim.clone();
         let plan = verified_plan(&root, fixture.tools).unwrap();
 
-        assert!(plan.specification.executable.is_absolute());
-        assert_eq!(plan.specification.executable, expected_command_processor);
+        assert!(plan.specification.executable().is_absolute());
+        assert_eq!(plan.specification.executable(), expected_command_processor);
         assert_eq!(
-            plan.specification.working_directory.as_deref(),
+            plan.specification.working_directory(),
             Some(std::fs::canonicalize(&root).unwrap().as_path())
         );
         let rendered = command_line(&plan);
@@ -969,13 +976,12 @@ mod tests {
         let discovered = ResolvedWindowsTools::discover().unwrap();
         assert!(discovered.command_processor.is_absolute());
         assert!(discovered.corepack_shim.is_absolute());
-        let state = AppState::new().unwrap();
+        let state = app_state().unwrap();
         let live_plan = prepare_deepseek_launch(&state.registry, &state.detection_context).unwrap();
-        assert!(live_plan.specification.executable.is_absolute());
+        assert!(live_plan.specification.executable().is_absolute());
         assert!(live_plan
             .specification
-            .working_directory
-            .as_ref()
+            .working_directory()
             .is_some_and(|directory| directory.is_absolute()));
     }
 
@@ -1018,8 +1024,7 @@ mod tests {
         assert!(!format!("{update:?}").contains(TOKEN));
         assert!(!format!("{:?}", lifecycle.diagnostics.records()).contains(TOKEN));
 
-        let library =
-            serde_json::to_string(&build_harness_library(&AppState::new().unwrap())).unwrap();
+        let library = serde_json::to_string(&build_harness_library(&app_state().unwrap())).unwrap();
         assert!(!library.contains(TOKEN));
         assert!(!library.contains("?token="));
     }

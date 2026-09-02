@@ -1,17 +1,17 @@
 use crate::harness::adapter::{DetectionContext, ExecutionTopology, HarnessId};
-use crate::harness::deepseek::DEEPSEEK_ADAPTER_ID;
 use crate::harness::registry::HarnessRegistry;
+use crate::integrations::deepseek::adapter::DEEPSEEK_ADAPTER_ID;
+use crate::integrations::deepseek::presentation::{
+    focus_existing_deepseek_interface, present_official_deepseek_interface, PresentationHandle,
+};
+use crate::integrations::deepseek::windows::{
+    prepare_deepseek_launch, DeepSeekLaunchPlan, DeepSeekOwnedRuntime, DeepSeekReadinessUpdate,
+};
 use crate::runtime::domain::RuntimePhase;
 use crate::runtime::driver::{
     HarnessRuntimeDriver, OwnedHarnessRuntime, OwnedRuntimeIdentity, PresentationCloseSemantics,
     RuntimeAuthenticationClass, RuntimeCompletion, RuntimeDriverMetadata, RuntimeFailure,
     RuntimeOwnershipClass, RuntimePresentationClass, RuntimeReadinessClass, RuntimeRunContext,
-};
-use crate::runtime::presentation::{
-    focus_existing_deepseek_interface, present_official_deepseek_interface, PresentationHandle,
-};
-use crate::runtime::windows::deepseek::{
-    prepare_deepseek_launch, DeepSeekLaunchPlan, DeepSeekOwnedRuntime, DeepSeekReadinessUpdate,
 };
 use std::fs::File;
 use std::io::Read;
@@ -304,5 +304,15 @@ fn spawn_output_pump(
 fn close_invalid_presentation(presentation: Option<PresentationHandle>) {
     if let Some(presentation) = presentation {
         let _ = presentation.close_intentionally();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn presentation_controls_close_the_window_and_stop_the_owned_runtime() {
+        let worker = include_str!("runtime.rs");
+        assert!(worker.contains("PresentationHandle::close_intentionally"));
+        assert!(worker.contains("runtime.stop()"));
     }
 }

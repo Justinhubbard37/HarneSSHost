@@ -1,11 +1,7 @@
-use crate::development_candidates;
 use crate::harness::adapter::{DetectionContext, HarnessId};
-use crate::harness::deepseek::DeepSeekAdapter;
-use crate::harness::opencode::OpenCodeAdapter;
-use crate::harness::registry::{HarnessRegistry, RegistryError};
+use crate::harness::registry::HarnessRegistry;
 use crate::interface::DefaultInterfaceResolver;
 use crate::runtime::controller::{RuntimeController, RuntimeSnapshot};
-use crate::runtime::deepseek_driver::DeepSeekRuntimeDriver;
 use crate::runtime::driver::HarnessRuntimeDriver;
 use std::sync::Arc;
 
@@ -16,28 +12,19 @@ pub(crate) struct AppState {
 }
 
 impl AppState {
-    pub(crate) fn new() -> Result<Self, RegistryError> {
-        Self::with_detection_context(development_candidates::detection_context())
-    }
-
-    pub(crate) fn with_detection_context(
+    pub(crate) fn new(
+        registry: Arc<HarnessRegistry>,
         detection_context: DetectionContext,
-    ) -> Result<Self, RegistryError> {
-        let mut registry = HarnessRegistry::default();
-        registry.register(Arc::new(DeepSeekAdapter::new()))?;
-        registry.register(Arc::new(OpenCodeAdapter::new()))?;
-        let registry = Arc::new(registry);
-        let runtime_drivers: Vec<Arc<dyn HarnessRuntimeDriver>> = vec![Arc::new(
-            DeepSeekRuntimeDriver::new(Arc::clone(&registry), detection_context.clone()),
-        )];
+        runtime_drivers: Vec<Arc<dyn HarnessRuntimeDriver>>,
+    ) -> Self {
         let runtime_controller =
             RuntimeController::new(runtime_drivers, Arc::new(DefaultInterfaceResolver));
 
-        Ok(Self {
+        Self {
             registry,
             detection_context,
             runtime_controller,
-        })
+        }
     }
 
     pub(crate) fn runtime_snapshot(&self, harness_id: &HarnessId) -> Option<RuntimeSnapshot> {

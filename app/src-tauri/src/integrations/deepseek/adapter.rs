@@ -41,7 +41,8 @@ impl DeepSeekAdapter {
                     topology: ExecutionTopology::NativeWindows,
                     supported: true,
                     track_a_baseline: true,
-                    source_reference: "app/src-tauri/src/runtime/windows/deepseek.rs".to_string(),
+                    source_reference:
+                        "app/src-tauri/src/integrations/deepseek/windows.rs".to_string(),
                 }],
             },
         }

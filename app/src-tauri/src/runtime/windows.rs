@@ -36,8 +36,6 @@ use windows_sys::Win32::System::Threading::{
     PROC_THREAD_ATTRIBUTE_JOB_LIST, STARTF_USESTDHANDLES, STARTUPINFOEXW,
 };
 
-pub(crate) mod deepseek;
-
 const ATTRIBUTE_COUNT: u32 = 2;
 const MAX_ARGUMENTS: usize = 32;
 const MAX_COMMAND_LINE_UNITS: usize = 32_767;
@@ -69,6 +67,29 @@ impl WindowsProcessSpec {
     pub(crate) fn with_working_directory(mut self, working_directory: PathBuf) -> Self {
         self.working_directory = Some(working_directory);
         self
+    }
+
+    pub(crate) fn with_trusted_prequoted_command_line(mut self, command_line: Vec<u16>) -> Self {
+        self.command_line = WindowsCommandLine::TrustedPrequoted(command_line);
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn trusted_prequoted_command_line(&self) -> Option<&[u16]> {
+        match &self.command_line {
+            WindowsCommandLine::TrustedPrequoted(command_line) => Some(command_line),
+            WindowsCommandLine::Arguments(_) => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn executable(&self) -> &Path {
+        &self.executable
+    }
+
+    #[cfg(test)]
+    pub(crate) fn working_directory(&self) -> Option<&Path> {
+        self.working_directory.as_deref()
     }
 
     fn validate(&self) -> Result<(), WindowsSupervisorError> {
@@ -844,7 +865,7 @@ fn build_command_line(
     Ok(command_line)
 }
 
-fn append_quoted_argument(
+pub(crate) fn append_quoted_argument(
     command_line: &mut Vec<u16>,
     argument: &OsStr,
 ) -> Result<(), WindowsSupervisorError> {

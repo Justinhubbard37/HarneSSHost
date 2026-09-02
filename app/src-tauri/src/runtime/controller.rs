@@ -645,10 +645,10 @@ mod tests {
     }
 
     impl FakeDriver {
-        fn deepseek() -> Self {
+        fn harness_a() -> Self {
             Self {
-                harness_id: HarnessId::new("deepseek"),
-                presentation_name: "DeepSeek".to_string(),
+                harness_id: HarnessId::new("harness-a"),
+                presentation_name: "Harness A".to_string(),
                 metadata: RuntimeDriverMetadata {
                     topology: ExecutionTopology::NativeWindows,
                     ownership: RuntimeOwnershipClass::WindowsJob,
@@ -660,10 +660,10 @@ mod tests {
             }
         }
 
-        fn opencode_shape() -> Self {
+        fn harness_b() -> Self {
             Self {
-                harness_id: HarnessId::new("opencode"),
-                presentation_name: "OpenCode".to_string(),
+                harness_id: HarnessId::new("harness-b"),
+                presentation_name: "Harness B".to_string(),
                 metadata: RuntimeDriverMetadata {
                     topology: ExecutionTopology::WslNative,
                     ownership: RuntimeOwnershipClass::SystemdUserServiceCgroup,
@@ -700,7 +700,7 @@ mod tests {
 
     fn controller() -> RuntimeController {
         RuntimeController::new(
-            vec![Arc::new(FakeDriver::deepseek())],
+            vec![Arc::new(FakeDriver::harness_a())],
             Arc::new(DefaultInterfaceResolver),
         )
     }
@@ -708,8 +708,8 @@ mod tests {
     fn controller_with_two_drivers() -> RuntimeController {
         RuntimeController::new(
             vec![
-                Arc::new(FakeDriver::deepseek()),
-                Arc::new(FakeDriver::opencode_shape()),
+                Arc::new(FakeDriver::harness_a()),
+                Arc::new(FakeDriver::harness_b()),
             ],
             Arc::new(DefaultInterfaceResolver),
         )
@@ -805,7 +805,7 @@ mod tests {
             generation: 1,
             cleanup_complete: false,
             command_sender: None,
-            failure_code: Some("deepseek.test-failure"),
+            failure_code: Some("harness-a.test-failure"),
             shutdown_requested: false,
         };
         assert!(matches!(state.begin_open().unwrap(), OpenDirective::Reuse));
@@ -923,49 +923,42 @@ mod tests {
     }
 
     #[test]
-    fn correction_2_deepseek_controls_still_close_the_presentation_intentionally() {
-        let worker = include_str!("deepseek_driver.rs");
-        assert!(worker.contains("PresentationHandle::close_intentionally"));
-        assert!(worker.contains("runtime.stop()"));
-    }
-
-    #[test]
     fn oc3_snapshot_identity_metadata_and_state_are_keyed_per_driver() {
         let controller = controller_with_two_drivers();
-        let deepseek = controller.snapshot(&HarnessId::new("deepseek")).unwrap();
-        let opencode = controller.snapshot(&HarnessId::new("opencode")).unwrap();
-        assert_eq!(deepseek.harness_id().as_str(), "deepseek");
+        let harness_a = controller.snapshot(&HarnessId::new("harness-a")).unwrap();
+        let harness_b = controller.snapshot(&HarnessId::new("harness-b")).unwrap();
+        assert_eq!(harness_a.harness_id().as_str(), "harness-a");
         assert_eq!(
-            deepseek.metadata().ownership,
+            harness_a.metadata().ownership,
             RuntimeOwnershipClass::WindowsJob
         );
-        assert_eq!(opencode.harness_id().as_str(), "opencode");
-        assert_eq!(opencode.metadata().topology, ExecutionTopology::WslNative);
+        assert_eq!(harness_b.harness_id().as_str(), "harness-b");
+        assert_eq!(harness_b.metadata().topology, ExecutionTopology::WslNative);
         assert_eq!(
-            opencode.metadata().ownership,
+            harness_b.metadata().ownership,
             RuntimeOwnershipClass::SystemdUserServiceCgroup
         );
         assert_eq!(
-            opencode.metadata().readiness,
+            harness_b.metadata().readiness,
             RuntimeReadinessClass::AuthenticatedHttp
         );
         assert_eq!(
-            opencode.metadata().authentication,
+            harness_b.metadata().authentication,
             RuntimeAuthenticationClass::BasicAuthentication
         );
         assert_eq!(
-            opencode.metadata().presentation_close,
+            harness_b.metadata().presentation_close,
             PresentationCloseSemantics::RuntimeContinues
         );
         controller.set_snapshot_for_test(
-            &HarnessId::new("deepseek"),
+            &HarnessId::new("harness-a"),
             RuntimePhase::Starting,
             false,
             None,
         );
         assert_eq!(
             controller
-                .snapshot(&HarnessId::new("opencode"))
+                .snapshot(&HarnessId::new("harness-b"))
                 .unwrap()
                 .phase(),
             RuntimePhase::Inactive
@@ -976,11 +969,11 @@ mod tests {
     fn oc3_presentation_close_semantics_vary_without_controller_changes() {
         let controller = controller_with_two_drivers();
         assert_eq!(
-            controller.presentation_close_control(&HarnessId::new("deepseek")),
+            controller.presentation_close_control(&HarnessId::new("harness-a")),
             Some(RuntimeControl::Stop)
         );
         assert_eq!(
-            controller.presentation_close_control(&HarnessId::new("opencode")),
+            controller.presentation_close_control(&HarnessId::new("harness-b")),
             None
         );
     }
@@ -988,13 +981,13 @@ mod tests {
     #[test]
     fn oc3_controller_does_not_expand_into_simultaneous_runtime_execution() {
         let mut state =
-            ControllerState::new([HarnessId::new("deepseek"), HarnessId::new("opencode")]);
+            ControllerState::new([HarnessId::new("harness-a"), HarnessId::new("harness-b")]);
         assert!(matches!(
-            state.begin_open(&HarnessId::new("deepseek")).unwrap(),
+            state.begin_open(&HarnessId::new("harness-a")).unwrap(),
             OpenDirective::Launch { .. }
         ));
         assert_eq!(
-            state.begin_open(&HarnessId::new("opencode")).err(),
+            state.begin_open(&HarnessId::new("harness-b")).err(),
             Some("harness.runtime-busy")
         );
     }
@@ -1002,30 +995,30 @@ mod tests {
     #[test]
     fn oc3_generic_failure_dto_retains_harness_identity() {
         let failure = RuntimeFailureDto::from(RuntimeFailure::new(
-            HarnessId::new("opencode"),
-            "opencode.test-failure",
+            HarnessId::new("harness-b"),
+            "harness-b.test-failure",
         ));
         let json = serde_json::to_value(failure).unwrap();
-        assert_eq!(json["harnessId"], "opencode");
-        assert_eq!(json["code"], "opencode.test-failure");
+        assert_eq!(json["harnessId"], "harness-b");
+        assert_eq!(json["code"], "harness-b.test-failure");
     }
 
     #[test]
     fn oc3_generic_results_and_events_retain_harness_identity() {
         let controller = controller_with_two_drivers();
-        let harness_id = HarnessId::new("opencode");
+        let harness_id = HarnessId::new("harness-b");
         let result = controller.open_result(&harness_id);
         let snapshot = controller.snapshot(&harness_id).unwrap();
         let event = controller.event_payload(&snapshot);
-        assert_eq!(result.harness_id, "opencode");
-        assert_eq!(event.harness_id, "opencode");
+        assert_eq!(result.harness_id, "harness-b");
+        assert_eq!(event.harness_id, "harness-b");
     }
 
     #[test]
     fn phase_4c_public_results_and_events_are_credential_free() {
         let controller = controller();
-        let snapshot = controller.snapshot(&HarnessId::new("deepseek")).unwrap();
-        assert_eq!(snapshot.harness_id().as_str(), "deepseek");
+        let snapshot = controller.snapshot(&HarnessId::new("harness-a")).unwrap();
+        assert_eq!(snapshot.harness_id().as_str(), "harness-a");
         let result = OpenHarnessResultDto {
             harness_id: snapshot.harness_id().as_str().to_string(),
             phase: snapshot.phase(),
@@ -1043,7 +1036,7 @@ mod tests {
             serde_json::to_string(&result).unwrap(),
             serde_json::to_string(&event).unwrap()
         );
-        assert!(serialized.contains("\"harnessId\":\"deepseek\""));
+        assert!(serialized.contains("\"harnessId\":\"harness-a\""));
         for forbidden in [
             "token",
             "authenticatedUrl",

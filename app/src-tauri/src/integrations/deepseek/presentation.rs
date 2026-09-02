@@ -1,5 +1,5 @@
+use crate::integrations::deepseek::readiness::SensitiveReadyTarget;
 use crate::runtime::driver::RuntimeGenerationReporter;
-use crate::runtime::readiness::SensitiveReadyTarget;
 use std::fmt::{Debug, Display, Formatter};
 use std::num::NonZeroU16;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn phase_4c_remote_deepseek_window_has_no_tauri_capability() {
-        let capability = include_str!("../../capabilities/default.json");
+        let capability = include_str!("../../../capabilities/default.json");
 
         assert!(capability.contains(r#""windows": ["main"]"#));
         assert!(!capability.contains(DEEPSEEK_WINDOW_LABEL));

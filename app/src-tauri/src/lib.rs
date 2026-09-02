@@ -1,6 +1,6 @@
 mod commands;
-mod development_candidates;
 mod harness;
+mod integrations;
 mod interface;
 mod library;
 mod runtime;
@@ -17,7 +17,7 @@ fn is_main_window_shutdown_boundary(label: &str) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app_state = AppState::new().expect("failed to initialize the harness registry");
+    let app_state = integrations::app_state().expect("failed to initialize the harness registry");
 
     let app = tauri::Builder::default()
         .manage(app_state)
@@ -56,9 +56,7 @@ mod tests {
     #[test]
     fn correction_2_main_window_close_is_the_application_shutdown_boundary() {
         assert!(is_main_window_shutdown_boundary(MAIN_WINDOW_LABEL));
-        assert!(!is_main_window_shutdown_boundary(
-            runtime::presentation::DEEPSEEK_WINDOW_LABEL
-        ));
+        assert!(!is_main_window_shutdown_boundary("presentation-a"));
 
         let lifecycle = include_str!("lib.rs");
         assert!(lifecycle.contains("WindowEvent::CloseRequested"));

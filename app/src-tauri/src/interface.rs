@@ -93,7 +93,7 @@ mod tests {
         assert_eq!(
             resolver
                 .resolve(InterfaceFacts::Loading {
-                    harness_name: "DeepSeek".to_string(),
+                    harness_name: "Harness A".to_string(),
                 })
                 .kind,
             HostSurfaceKind::Loading
@@ -101,7 +101,7 @@ mod tests {
         assert_eq!(
             resolver
                 .resolve(InterfaceFacts::OfficialInterfaceAvailable {
-                    harness_name: "DeepSeek".to_string(),
+                    harness_name: "Harness A".to_string(),
                     presentation: RuntimePresentationClass::OwnedIncognitoWebview,
                 })
                 .kind,
@@ -125,7 +125,7 @@ mod tests {
     fn phase_4c_official_interface_resolution_is_credential_free() {
         let surface =
             DefaultInterfaceResolver.resolve(InterfaceFacts::OfficialInterfaceAvailable {
-                harness_name: "DeepSeek".to_string(),
+                harness_name: "Harness A".to_string(),
                 presentation: RuntimePresentationClass::OwnedIncognitoWebview,
             });
         let json = serde_json::to_string(&surface).unwrap();

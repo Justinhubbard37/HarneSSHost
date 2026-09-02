@@ -13,7 +13,7 @@ pub(crate) enum CapabilityDomain {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-#[allow(dead_code)] // The shared contract must represent states not used by the initial DeepSeek manifest.
+#[allow(dead_code)] // The shared contract must represent states not used by the initial integration manifest.
 pub(crate) enum CapabilityStatus {
     Unsupported,
     Supported,

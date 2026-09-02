@@ -1,8 +1,9 @@
-use crate::harness::adapter::{
-    CandidateSource, DetectionContext, HarnessId, InstallationCandidate,
-};
+#[cfg(test)]
+use crate::harness::adapter::DetectionContext;
+use crate::harness::adapter::{CandidateSource, HarnessId, InstallationCandidate};
+use crate::integrations::deepseek::adapter::DEEPSEEK_ADAPTER_ID;
 
-pub(crate) fn detection_context() -> DetectionContext {
+pub(crate) fn candidates() -> Vec<InstallationCandidate> {
     let mut candidates = Vec::new();
 
     #[cfg(debug_assertions)]
@@ -17,18 +18,13 @@ pub(crate) fn detection_context() -> DetectionContext {
             .join("deepseek-harness");
 
         candidates.push(InstallationCandidate::new(
-            HarnessId::new("deepseek"),
+            HarnessId::new(DEEPSEEK_ADAPTER_ID),
             CandidateSource::DevelopmentCheckout,
             checkout,
         ));
     }
 
-    #[cfg(not(test))]
-    {
-        candidates.extend(crate::harness::opencode::machine_candidates());
-    }
-
-    DetectionContext::new(candidates)
+    candidates
 }
 
 #[cfg(test)]
@@ -37,7 +33,7 @@ mod tests {
 
     #[test]
     fn debug_build_injects_only_the_known_sibling_development_candidate() {
-        let context = detection_context();
+        let context = DetectionContext::new(candidates());
         let candidates = context.candidates();
         let expected = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -47,7 +43,7 @@ mod tests {
             .join("deepseek-harness");
 
         assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].adapter_id.as_str(), "deepseek");
+        assert_eq!(candidates[0].adapter_id.as_str(), DEEPSEEK_ADAPTER_ID);
         assert_eq!(candidates[0].source, CandidateSource::DevelopmentCheckout);
         assert_eq!(candidates[0].path, expected);
     }

@@ -8,6 +8,55 @@ const BROWSER_OPEN_MESSAGE: &[u8] =
     b"dsh web: opening the default browser; pass --no-open to disable";
 const MAX_UNFINISHED_LINE_BYTES: usize = 2_048;
 const DEEPSEEK_TOKEN_LENGTH: usize = 43;
+const REDACTED: &str = "[REDACTED]";
+const REDACTED_READINESS: &str = "DeepSeek readiness output was redacted.";
+
+pub(crate) fn sanitize_diagnostic(source: &str) -> String {
+    if source.contains("dsh web:") && contains_token_parameter(source) {
+        return REDACTED_READINESS.to_string();
+    }
+
+    redact_token_parameters(source)
+}
+
+fn contains_token_parameter(source: &str) -> bool {
+    source
+        .as_bytes()
+        .windows(b"token=".len())
+        .any(|window| window.eq_ignore_ascii_case(b"token="))
+}
+
+fn redact_token_parameters(source: &str) -> String {
+    let bytes = source.as_bytes();
+    let mut result = String::with_capacity(source.len());
+    let mut cursor = 0;
+
+    while let Some(relative) = find_token_parameter(&bytes[cursor..]) {
+        let start = cursor + relative;
+        let value_start = start + b"token=".len();
+        result.push_str(&source[cursor..value_start]);
+        result.push_str(REDACTED);
+
+        let mut value_end = value_start;
+        while value_end < bytes.len() && !is_parameter_terminator(bytes[value_end]) {
+            value_end += 1;
+        }
+        cursor = value_end;
+    }
+
+    result.push_str(&source[cursor..]);
+    result
+}
+
+fn find_token_parameter(bytes: &[u8]) -> Option<usize> {
+    bytes
+        .windows(b"token=".len())
+        .position(|window| window.eq_ignore_ascii_case(b"token="))
+}
+
+fn is_parameter_terminator(byte: u8) -> bool {
+    byte.is_ascii_whitespace() || matches!(byte, b'&' | b'#' | b'\'' | b'"' | b')' | b']' | b'}')
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ReadyOrigin {
@@ -361,5 +410,26 @@ mod tests {
 
         assert!(!rendered.contains(secret));
         assert!(!rendered.contains("dsh web:"));
+    }
+
+    #[test]
+    fn diagnostic_sanitizer_redacts_token_parameters_case_insensitively() {
+        let source = format!("request failed: http://127.0.0.1:3080/?TOKEN={TOKEN}&mode=local");
+        let sanitized = sanitize_diagnostic(&source);
+
+        assert!(!sanitized.contains(TOKEN));
+        assert!(sanitized.contains("TOKEN=[REDACTED]&mode=local"));
+    }
+
+    #[test]
+    fn diagnostic_sanitizer_replaces_authenticated_readiness_output() {
+        let source = format!("dsh web: http://127.0.0.1:3080/?token={TOKEN}");
+        let sanitized = sanitize_diagnostic(&source);
+
+        assert_eq!(sanitized, REDACTED_READINESS);
+        assert!(!sanitized.contains(TOKEN));
+        assert!(!sanitized.contains("127.0.0.1"));
+        assert!(!sanitized.contains("?token="));
+        assert_ne!(sanitized, source);
     }
 }

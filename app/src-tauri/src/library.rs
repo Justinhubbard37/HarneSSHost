@@ -402,11 +402,10 @@ fn detected_message(
             "Source package metadata was detected successfully.".to_string()
         }
         DetectedInstallationClassification::ValidWslNative => {
-            "A trusted WSL-native OpenCode installation matches the Track A baseline."
-                .to_string()
+            "A trusted WSL-native installation matches the configured baseline.".to_string()
         }
         DetectedInstallationClassification::NativeWindowsSupported => {
-            "A native Windows OpenCode installation was detected; it is supported but is not the Track A baseline."
+            "A native Windows installation was detected; it is supported but is not the configured baseline."
                 .to_string()
         }
     }
@@ -475,23 +474,166 @@ impl LibraryError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::harness::adapter::DetectionContext;
+    use crate::harness::adapter::{
+        AdapterError, CandidateSource, DetectionContext, HarnessDescriptor, OfficialInterfaceKind,
+        SupportedTopologyFact, TestedVersion,
+    };
+    use crate::harness::capability::CapabilityManifest;
+    use crate::harness::registry::HarnessRegistry;
+    use crate::runtime::driver::{
+        HarnessRuntimeDriver, PresentationCloseSemantics, RuntimeAuthenticationClass,
+        RuntimeCompletion, RuntimeDriverMetadata, RuntimeFailure, RuntimeOwnershipClass,
+        RuntimePresentationClass, RuntimeReadinessClass, RuntimeRunContext,
+    };
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    const HARNESS_A: &str = "harness-a";
+    const HARNESS_B: &str = "harness-b";
+
+    struct FakeAdapter {
+        descriptor: HarnessDescriptor,
+        detected: bool,
+    }
+
+    impl FakeAdapter {
+        fn new(id: &str, detected: bool) -> Self {
+            Self {
+                descriptor: HarnessDescriptor {
+                    id: HarnessId::new(id),
+                    display_name: format!("Harness {}", id.to_ascii_uppercase()),
+                    description: "Generic library fixture.".to_string(),
+                    official_interfaces: vec![OfficialInterfaceFact {
+                        kind: OfficialInterfaceKind::Web,
+                        source_reference: "fixture-source".to_string(),
+                    }],
+                    supported_topologies: vec![SupportedTopologyFact {
+                        topology: crate::harness::adapter::ExecutionTopology::NativeWindows,
+                        supported: true,
+                        track_a_baseline: true,
+                        source_reference: "fixture-topology".to_string(),
+                    }],
+                },
+                detected,
+            }
+        }
+    }
+
+    impl HarnessAdapter for FakeAdapter {
+        fn descriptor(&self) -> &HarnessDescriptor {
+            &self.descriptor
+        }
+
+        fn detect(&self, _context: &DetectionContext) -> Result<DetectionReport, AdapterError> {
+            if self.detected {
+                Ok(DetectionReport::Detected(DetectedInstallation::new(
+                    self.descriptor.id.clone(),
+                    CandidateSource::DevelopmentCheckout,
+                    PathBuf::from("fixture-checkout"),
+                )))
+            } else {
+                Ok(DetectionReport::NotFound {
+                    code: "harness.not-installed",
+                    message: "The fixture harness is not installed.".to_string(),
+                })
+            }
+        }
+
+        fn version(
+            &self,
+            _installation: &DetectedInstallation,
+        ) -> Result<VersionReport, AdapterError> {
+            Ok(VersionReport {
+                detected_version: "1.0.0".to_string(),
+                tested_versions: vec![TestedVersion {
+                    version: "1.0.0".to_string(),
+                    tag: "v1.0.0".to_string(),
+                    source_commit: "fixture-source-commit".to_string(),
+                }],
+                compatibility: CompatibilityState::TestedVersionMatch,
+                start_blocked: false,
+            })
+        }
+
+        fn capability_manifest(&self, version: Option<&VersionReport>) -> CapabilityManifest {
+            CapabilityManifest {
+                adapter_id: self.descriptor.id.clone(),
+                adapter_name: self.descriptor.display_name.clone(),
+                detected_version: version.map(|value| value.detected_version.clone()),
+                evidence_version: TestedVersion {
+                    version: "1.0.0".to_string(),
+                    tag: "v1.0.0".to_string(),
+                    source_commit: "fixture-source-commit".to_string(),
+                },
+                compatibility: version.map(|value| value.compatibility),
+                entries: Vec::new(),
+            }
+        }
+    }
+
+    struct FakeDriver {
+        harness_id: HarnessId,
+    }
+
+    impl HarnessRuntimeDriver for FakeDriver {
+        fn harness_id(&self) -> &HarnessId {
+            &self.harness_id
+        }
+
+        fn presentation_name(&self) -> &str {
+            "Harness A"
+        }
+
+        fn metadata(&self) -> RuntimeDriverMetadata {
+            RuntimeDriverMetadata {
+                topology: crate::harness::adapter::ExecutionTopology::NativeWindows,
+                ownership: RuntimeOwnershipClass::WindowsJob,
+                readiness: RuntimeReadinessClass::StdoutLaunchToken,
+                authentication: RuntimeAuthenticationClass::LaunchTokenSessionCookie,
+                presentation: RuntimePresentationClass::OwnedIncognitoWebview,
+                presentation_close: PresentationCloseSemantics::StopRuntime,
+            }
+        }
+
+        fn run_generation(&self, _context: RuntimeRunContext) -> RuntimeCompletion {
+            panic!("generic library tests do not launch runtimes")
+        }
+
+        fn focus_presentation(&self, _app: &tauri::AppHandle) -> Result<(), RuntimeFailure> {
+            Ok(())
+        }
+    }
+
+    fn test_state(detected: bool) -> AppState {
+        let mut registry = HarnessRegistry::default();
+        registry
+            .register(Arc::new(FakeAdapter::new(HARNESS_A, detected)))
+            .unwrap();
+        registry
+            .register(Arc::new(FakeAdapter::new(HARNESS_B, detected)))
+            .unwrap();
+        AppState::new(
+            Arc::new(registry),
+            DetectionContext::default(),
+            vec![Arc::new(FakeDriver {
+                harness_id: HarnessId::new(HARNESS_A),
+            })],
+        )
+    }
 
     #[test]
-    fn deepseek_remains_in_the_supported_catalog() {
-        let state = AppState::new().unwrap();
+    fn configured_adapters_remain_visible_in_the_supported_catalog() {
+        let state = test_state(true);
         let library = build_harness_library(&state);
 
         assert_eq!(library.harnesses.len(), 2);
-        assert_eq!(library.harnesses[0].id, "deepseek");
-        assert_eq!(library.harnesses[0].display_name, "DeepSeek Harness");
-        assert_eq!(library.harnesses[1].id, "opencode");
-        assert_eq!(library.harnesses[1].display_name, "OpenCode");
+        assert_eq!(library.harnesses[0].id, HARNESS_A);
+        assert_eq!(library.harnesses[1].id, HARNESS_B);
     }
 
     #[test]
     fn supported_harness_remains_visible_when_not_locally_detected() {
-        let state = AppState::with_detection_context(DetectionContext::default()).unwrap();
+        let state = test_state(false);
         let library = build_harness_library(&state);
 
         assert_eq!(library.harnesses.len(), 2);
@@ -503,9 +645,9 @@ mod tests {
 
     #[test]
     fn catalog_detection_and_runtime_state_remain_independent() {
-        let state = AppState::with_detection_context(DetectionContext::default()).unwrap();
+        let state = test_state(false);
         state.runtime_controller.set_snapshot_for_test(
-            &HarnessId::new("deepseek"),
+            &HarnessId::new(HARNESS_A),
             RuntimePhase::Starting,
             false,
             None,
@@ -517,7 +659,7 @@ mod tests {
         assert_eq!(state.detection_context.candidates().len(), 0);
         assert_eq!(
             state
-                .runtime_snapshot(&HarnessId::new("deepseek"))
+                .runtime_snapshot(&HarnessId::new(HARNESS_A))
                 .map(|snapshot| snapshot.phase()),
             Some(RuntimePhase::Starting)
         );
@@ -579,8 +721,8 @@ mod tests {
     }
 
     #[test]
-    fn phase_4c_verified_deepseek_open_action_tracks_live_runtime_and_cleanup_state() {
-        let state = AppState::new().unwrap();
+    fn runtime_state_drives_generic_open_action_and_cleanup_state() {
+        let state = test_state(true);
 
         let initial = build_harness_library(&state);
         assert_eq!(initial.harnesses[0].state, HarnessCardStateDto::Ready);
@@ -614,10 +756,10 @@ mod tests {
             ),
         ] {
             state.runtime_controller.set_snapshot_for_test(
-                &HarnessId::new("deepseek"),
+                &HarnessId::new(HARNESS_A),
                 phase,
                 cleanup_complete,
-                Some("deepseek.test-failure"),
+                Some("harness-a.test-failure"),
             );
             let library = build_harness_library(&state);
             assert_eq!(library.harnesses[0].state, expected_state);
@@ -627,10 +769,10 @@ mod tests {
 
     #[test]
     fn default_library_payload_excludes_technical_and_sensitive_fields() {
-        let state = AppState::new().unwrap();
+        let state = test_state(true);
         let json = serde_json::to_string(&build_harness_library(&state)).unwrap();
 
-        assert!(json.contains("DeepSeek Harness"));
+        assert!(json.contains("Harness HARNESS-A"));
         for forbidden in [
             "sourceCommit",
             "evidenceVersion",
@@ -651,8 +793,8 @@ mod tests {
 
     #[test]
     fn details_are_separate_sanitized_and_exclude_ownership() {
-        let state = AppState::new().unwrap();
-        let details = build_harness_details(&state, "deepseek").unwrap();
+        let state = test_state(true);
+        let details = build_harness_details(&state, HARNESS_A).unwrap();
         let json = serde_json::to_string(&details).unwrap();
 
         assert!(json.contains("detectedVersion"));
@@ -661,7 +803,6 @@ mod tests {
         for forbidden in [
             "canonicalPath",
             "C:\\\\",
-            "upstream\\\\deepseek-harness",
             "processCommandLine",
             "environment",
             "authenticatedUrl",
@@ -676,45 +817,43 @@ mod tests {
         }
 
         let snapshot = state
-            .runtime_snapshot(&HarnessId::new("deepseek"))
-            .expect("DeepSeek runtime state must exist");
+            .runtime_snapshot(&HarnessId::new(HARNESS_A))
+            .expect("fixture runtime state must exist");
         assert_eq!(snapshot.phase(), RuntimePhase::Inactive);
-        assert_eq!(snapshot.harness_id().as_str(), "deepseek");
+        assert_eq!(snapshot.harness_id().as_str(), HARNESS_A);
         assert_eq!(snapshot.generation(), 0);
     }
 
     #[test]
-    fn opencode_details_do_not_assume_runtime_availability() {
-        let state = AppState::with_detection_context(DetectionContext::default()).unwrap();
-        let details = build_harness_details(&state, "opencode").unwrap();
+    fn catalog_only_details_do_not_assume_runtime_availability() {
+        let state = test_state(false);
+        let details = build_harness_details(&state, HARNESS_B).unwrap();
         let json = serde_json::to_value(details).unwrap();
 
-        assert_eq!(json["id"], "opencode");
+        assert_eq!(json["id"], HARNESS_B);
         assert_eq!(json["detection"]["classification"], "notInstalled");
         assert_eq!(json["runtime"]["available"], false);
         assert!(json["runtime"].get("phase").is_none());
-        assert_eq!(json["officialInterfaces"].as_array().unwrap().len(), 4);
-        assert_eq!(json["supportedTopologies"].as_array().unwrap().len(), 2);
-        assert!(state
-            .runtime_snapshot(&HarnessId::new("opencode"))
-            .is_none());
+        assert_eq!(json["officialInterfaces"].as_array().unwrap().len(), 1);
+        assert_eq!(json["supportedTopologies"].as_array().unwrap().len(), 1);
+        assert!(state.runtime_snapshot(&HarnessId::new(HARNESS_B)).is_none());
     }
 
     #[test]
     fn generic_runtime_failure_copy_uses_the_harness_display_name() {
         assert_eq!(
-            runtime_failure_message("OpenCode", false),
-            "OpenCode could not be opened."
+            runtime_failure_message("Harness B", false),
+            "Harness B could not be opened."
         );
         assert_eq!(
-            runtime_failure_message("DeepSeek", true),
-            "DeepSeek could not be opened. Use Open to try again."
+            runtime_failure_message("Harness A", true),
+            "Harness A could not be opened. Use Open to try again."
         );
     }
 
     #[test]
     fn rejects_unknown_detail_requests_with_a_safe_code() {
-        let state = AppState::new().unwrap();
+        let state = test_state(true);
         let error = build_harness_details(&state, "unknown").unwrap_err();
 
         assert_eq!(error.code(), "harness.not-supported");
